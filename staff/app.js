@@ -108,6 +108,10 @@ if (dow === 5 || dow === 6) add("吉村汐織", "late");
 };
 gen(now.getFullYear(), now.getMonth());
 gen(now.getFullYear(), now.getMonth() + 1 > 11? 0: now.getMonth() + 1);
+// 先月分も生成する：辛麺屋出勤手当は確定シフトの日数で数えるため、
+// 先月の給与明細プレビューでも手当が付くように（打刻からは数えない）
+const prevGen = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+gen(prevGen.getFullYear(), prevGen.getMonth());
 // 先月の勤怠サンプル（給与明細の見え方確認用）：数名分だけ軽く生成
 const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 staff.forEach((s) => {
@@ -697,7 +701,9 @@ async function renderClock() {
 const today = fmtDate(new Date());
 const records = await DB.todayAttendance(today);
 // 出勤中のみんな（共通表示）
-const working = records.filter((r) => currentStatus(r) === "working" || currentStatus(r) === "break");
+// 社員（月給制）は打刻しない運用のため、出勤中表示にも出さない。
+const salaryIds = new Set(STAFF.filter((s) => s.pay_type === "salary").map((s) => s.id));
+const working = records.filter((r) =>!salaryIds.has(r.staff_id) && (currentStatus(r) === "working" || currentStatus(r) === "break"));
 $("now-working").innerHTML = working
 .map((r) => `<span class="working-chip${currentStatus(r) === "break"? " break": ""}">${esc(staffName(r.staff_id))}${currentStatus(r) === "break"? "（休憩中）": ""}</span>`)
 .join("");
@@ -707,6 +713,10 @@ if (IS_KIOSK()) { renderKiosk(records); return;}
 
 renderTodayShift();
 renderQuotaCard();
+// 社員（月給制）は打刻不要（2026-11-28決定）のため、案内文を社員向けに切り替える
+if (ME.pay_type === "salary") {
+$("clock-guide-text").innerHTML = "社員の方は打刻は不要です。<br>辛麺屋に出勤した日数は、確定シフトから自動で数えて出勤手当に反映されます。";
+}
 const rec = myToday(records);
 const lines = todayLines(rec);
 $("today-records").innerHTML = lines.length? lines.map(esc).join("<br>"): "まだ記録がありません";
@@ -775,7 +785,8 @@ function renderKiosk(records) {
 const grid = $("kiosk-grid");
 grid.innerHTML = "";
 const stateLabel = { off: "未出勤", working: "出勤中", break: "休憩中", done: "退勤ずみ"};
-STAFF.forEach((s) => {
+// 社員（月給制）は打刻不要（2026-11-28決定）のため、打刻の名前一覧に出さない。
+STAFF.filter((s) => s.pay_type !== "salary").forEach((s) => {
 const rec = records.find((a) => a.staff_id === s.id);
 const st = currentStatus(rec);
 const btn = document.createElement("button");
@@ -1180,9 +1191,15 @@ otMin += Math.max(0, w - 480);
 });
 // 辛麺屋出勤手当（cross_allowance が設定されたスタッフのみ：柳村・島本）：
 // 基本BAR勤務のため、辛麺屋に出勤した日は1日あたり cross_allowance 円を
-// 所定時間外賃金として支給する。日数は出勤打刻のある distinct な日で数える。
-const crossDays = new Set(records.filter((r) => r.clock_in).map((r) => r.date)).size;
+// 所定時間外賃金として支給する。社員2名は打刻しない運用（2026-11-28決定）の
+// ため、日数は打刻ではなく「その月の確定シフトに登録がある distinct な日」で
+// 数える（手当は日数×単価のみで、時間は給与に影響しない）。
 const crossRate = staff.cross_allowance || 0;
+let crossDays = 0;
+if (crossRate > 0) {
+const monthShifts = await DB.listShifts(y, m);
+crossDays = new Set(monthShifts.filter((s) => s.staff_id === staff.id).map((s) => s.date)).size;
+}
 const crossPay = crossRate * crossDays;
 // 社会保険（健康保険・厚生年金・子ども子育て支援金）の加入判定。
 // 月給制は staff.social_insurance、時給制は従来の staff.social_insurance_enrolled を使う
@@ -1198,7 +1215,7 @@ if (isSalary) {
 // 社員（月給制）：打刻からの時給計算はせず、固定給＋手当で組み立てる。
 //   基本給（base_salary）＋役職手当＋深夜手当（固定額 fixed_night_allowance）
 //   ＋みなし残業＋交通費＋ドリンクバック
-//   ＋所定時間外賃金（辛麺屋出勤手当 = cross_allowance × 出勤日数）
+//   ＋所定時間外賃金（辛麺屋出勤手当 = cross_allowance × 確定シフトの日数）
 // ドリンクバックは月ごとに変わるため、対象月の金額を staff.drink_back に
 // 入力しておく運用（従来の月次手当入力と同じ仕組み）。
 earnings = [
