@@ -413,9 +413,10 @@ $("today-shift-card").style.display = "none";
 $("hello-date").textContent = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日（${DOW[now.getDay()]}）`;
 // 管理者（神坂さん）だけ下部ナビに「管理者」ボタンを出す
 $("nav-admin").style.display = ME.role === "admin"? "": "none";
-// 管理者はログイン直後・セッション復元時とも管理者画面から入る。
-// 通常のスタッフ向け表示へは下部ナビ（打刻・シフト等）から切り替えられる。
-showView(ME.role === "admin"? "admin": "clock");
+// 管理者はログイン直後・セッション復元時とも「打刻」タブの管理者ホーム
+// （ライブ時計・出勤中パネル・打刻ボード）に着地する。提出状況・日別・
+// 確定編集・給与一覧・売上入力などの詳細な管理者機能は「管理者」タブに残る。
+showView("clock");
 await renderClock();
 await refreshInboxBadge();
 maybeSeedDemoInbox();
@@ -787,6 +788,9 @@ return lines;
 async function renderClock() {
 const today = fmtDate(new Date());
 const records = await DB.todayAttendance(today);
+// 管理者（admin）は「打刻」タブが管理者ホームになる（通常スタッフ向けの
+// カード群は出さず、時計・出勤中パネル・打刻ボードを出す）。
+if (IS_ADMIN()) { await renderAdminHome(records); return;}
 // 出勤中のみんな（共通表示）
 // 社員（月給制）は打刻しない運用のため、出勤中表示にも出さない。
 const salaryIds = new Set(STAFF.filter((s) => s.pay_type === "salary").map((s) => s.id));
@@ -929,6 +933,150 @@ $("k-btn-in").addEventListener("click", () => kioskAct("in"));
 $("k-btn-break-start").addEventListener("click", () => kioskAct("break_start"));
 $("k-btn-break-end").addEventListener("click", () => kioskAct("break_end"));
 $("k-btn-out").addEventListener("click", () => kioskAct("out"));
+
+// ============================================================
+// 管理者ホーム（role='admin' の「打刻」タブ）
+// ------------------------------------------------------------
+// ・admin がログインした直後・セッション復元時の着地画面。試作側の
+//   管理者ホームと同じ構成にする：
+//     日付＋大きなライブ時計／時間帯で変わる挨拶／
+//     「勤務中 ○名 ／ 本日のシフト ○件」／
+//     「今、出勤中 ○名」パネル（出勤中一覧＋未出勤リスト）／
+//     打刻ボード（名前タップで選択し、そのスタッフとして打刻）。
+// ・詳細な管理者機能（提出状況・確定編集・給与一覧など）は従来どおり
+//   下部ナビの「管理者」タブ（view-admin）に残っている。
+// ・社員（月給制）は打刻しない運用（2026-11-28決定）のため、ボード・
+//   出勤中・未出勤のいずれにも出さない（kiosk のボードと同じ扱い）。
+// ・本番で admin が他人の打刻レコードを「新規作成」するには RLS の
+//   attendance_insert_admin ポリシーが必要（schema.sql／
+//   apply_attendance_admin_policy.py）。既存レコードの更新は
+//   attendance_update_admin（admin/subadmin 可）で従来から可能。
+// ============================================================
+function adminGreetingText(h) {
+if (h >= 22 || h < 5) return ["おつかれさまです！", "深夜もありがとうございます"];
+if (h < 11) return ["おはようございます！", "今日もよろしくお願いします"];
+if (h < 15) return ["おつかれさまです！", "ランチタイムもありがとうございます"];
+if (h < 18) return ["おつかれさまです！", "午後もありがとうございます"];
+return ["おつかれさまです！", "夜の部もありがとうございます"];
+}
+let adminClockTimer = null;
+function tickAdminClock() {
+const now = new Date();
+const c = $("ah-clock");
+if (c) c.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+const d = $("ah-date");
+if (d) d.textContent = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日（${DOW[now.getDay()]}）`;
+const g = $("ah-greeting");
+if (g) g.innerHTML = adminGreetingText(now.getHours()).map(esc).join("<br>");
+}
+function startAdminClock() {
+tickAdminClock();
+if (!adminClockTimer) adminClockTimer = setInterval(tickAdminClock, 1000);
+}
+
+async function renderAdminHome(records) {
+// 管理者ホームを表示し、通常スタッフ向けのカード群を隠す
+$("admin-home").style.display = "block";
+$("today-shift-card").style.display = "none";
+$("quota-card").style.display = "none";
+$("now-working-card").style.display = "none";
+$("clock-guide").style.display = "none";
+$("personal-clock-extra").style.display = "none";
+startAdminClock();
+const now = new Date();
+const today = fmtDate(now);
+const shifts = await DB.listShifts(now.getFullYear(), now.getMonth());
+const todayShifts = shifts.filter((s) => s.date === today);
+const salaryIds = new Set(STAFF.filter((s) => s.pay_type === "salary").map((s) => s.id));
+const working = records.filter((r) =>!salaryIds.has(r.staff_id)
+&& (currentStatus(r) === "working" || currentStatus(r) === "break"));
+$("ah-summary").innerHTML =
+`勤務中 <b>${working.length}名</b> ／ 本日のシフト <b>${todayShifts.length}件</b>`;
+$("ah-working-count").textContent = `${working.length}名`;
+$("ah-working").innerHTML = working
+.map((r) => `<span class="working-chip${currentStatus(r) === "break"? " break": ""}">${esc(staffName(r.staff_id))}${currentStatus(r) === "break"? "（休憩中）": ""}</span>`)
+.join("");
+$("ah-working-empty").style.display = working.length? "none": "block";
+// 本日シフトあり・まだ未出勤：確定シフトと打刻から作る。
+// 時刻はその人の最も早い開始時刻。社員（打刻しない）は含めない。
+const toMin = (t) => { const [h, mm] = t.split(":").map(Number); return h * 60 + mm;};
+const recByStaff = new Map(records.map((r) => [r.staff_id, r]));
+const byStaff = new Map();
+todayShifts.forEach((s) => {
+if (!byStaff.has(s.staff_id)) byStaff.set(s.staff_id, []);
+byStaff.get(s.staff_id).push(s);
+});
+const notYet = [];
+byStaff.forEach((list, sid) => {
+if (salaryIds.has(sid)) return;
+const rec = recByStaff.get(sid);
+if (rec && rec.clock_in) return; // 出勤済み（勤務中・休憩中・退勤ずみ）
+const earliest = list.map((s) => s.start_time || BAND[s.band].start)
+.sort((a, b) => toMin(a) - toMin(b))[0];
+const st = STAFF.find((s) => s.id === sid);
+notYet.push({ name: staffName(sid), start: earliest, min: toMin(earliest),
+order: st && st.sort_order != null? st.sort_order: 99});
+});
+notYet.sort((a, b) => a.min - b.min || a.order - b.order);
+$("ah-notyet").innerHTML = notYet.length
+? `本日シフトあり・まだ未出勤：${notYet.map((x) => `${esc(x.name)}（${x.start}〜）`).join("、")}`
+: "";
+renderAdminBoard(records);
+}
+
+// ---------- 管理者ホームの打刻ボード ----------
+let adminTargetId = null; // 管理者ホームで選択中のスタッフ
+function renderAdminBoard(records) {
+const grid = $("ah-grid");
+grid.innerHTML = "";
+const stateLabel = { off: "未出勤", working: "出勤中", break: "休憩中", done: "退勤ずみ"};
+// 社員（月給制）は打刻不要のため、名前一覧に出さない（kiosk と同じ）
+STAFF.filter((s) => s.pay_type!== "salary").forEach((s) => {
+const rec = records.find((a) => a.staff_id === s.id);
+const st = currentStatus(rec);
+const btn = document.createElement("button");
+btn.className = "kiosk-name is-" + st + (s.id === adminTargetId? " selected": "");
+btn.innerHTML = `<span class="k-name">${esc(s.name)}</span><span class="k-state">${stateLabel[st]}</span>`;
+btn.addEventListener("click", () => { adminTargetId = s.id; renderClock();});
+grid.appendChild(btn);
+});
+const target = STAFF.find((s) => s.id === adminTargetId);
+const rec = records.find((a) => a.staff_id === adminTargetId);
+const st = currentStatus(rec);
+$("ah-status").textContent =!target? "まず名前を選んでください":
+{ off: `${target.name}さん：まだ出勤していません`,
+working: `${target.name}さん：出勤中です`,
+break: `${target.name}さん：休憩中です`,
+done: `${target.name}さん：今日は退勤ずみです`}[st];
+$("ah-btn-in").disabled =!(target && st === "off");
+$("ah-btn-break-start").disabled =!(target && st === "working");
+$("ah-btn-break-end").disabled =!(target && st === "break");
+$("ah-btn-out").disabled =!(target && (st === "working" || st === "break"));
+const lines = todayLines(rec);
+$("ah-today").innerHTML = lines.length? lines.map(esc).join("<br>"): "";
+}
+async function adminBoardAct(kind) {
+if (!adminTargetId) { toast("まず名前を選んでね"); return;}
+const name = staffName(adminTargetId);
+if (kind === "out" &&!confirm(`${name}さん、退勤しますか？`)) return;
+const rec = await getOrCreateFor(adminTargetId);
+const nowIso = new Date().toISOString();
+if (kind === "in") rec.clock_in = nowIso;
+if (kind === "break_start") { rec.breaks = rec.breaks || []; rec.breaks.push({ start: nowIso, end: null});}
+if (kind === "break_end") { const b = (rec.breaks || []).find((x) =>!x.end); if (b) b.end = nowIso;}
+if (kind === "out") {
+const b = (rec.breaks || []).find((x) =>!x.end); if (b) b.end = nowIso;
+rec.clock_out = nowIso;
+}
+await DB.upsertAttendance(rec);
+toast({ in: `${name}さん、出勤しました`, break_start: `${name}さん、休憩に入りました`,
+break_end: `${name}さん、休憩おわり`, out: `${name}さん、退勤しました。おつかれさまでした！`}[kind]);
+renderClock();
+}
+$("ah-btn-in").addEventListener("click", () => adminBoardAct("in"));
+$("ah-btn-break-start").addEventListener("click", () => adminBoardAct("break_start"));
+$("ah-btn-break-end").addEventListener("click", () => adminBoardAct("break_end"));
+$("ah-btn-out").addEventListener("click", () => adminBoardAct("out"));
 
 
 // ============================================================

@@ -58,6 +58,39 @@
 
   <!-- ===== ホーム（打刻タブ） ===== -->
   <section id="view-clock" class="view">
+    <!-- 管理者ホーム（role='admin' のときだけ表示。ログイン直後の着地画面）
+         試作側の管理者ホームと同じ構成：ライブ時計＋挨拶／勤務中・本日のシフト／
+         今、出勤中パネル／打刻ボード。通常スタッフには出さない。 -->
+    <div id="admin-home" style="display:none">
+      <div class="card ah-clock-card">
+        <div class="ah-date" id="ah-date"></div>
+        <div class="ah-clock" id="ah-clock">--:--:--</div>
+        <div class="ah-greeting" id="ah-greeting"></div>
+        <div class="ah-summary" id="ah-summary"></div>
+      </div>
+
+      <div class="card">
+        <h2>今、出勤中 <span class="ah-working-count" id="ah-working-count"></span></h2>
+        <div class="now-working" id="ah-working"></div>
+        <p class="hint" id="ah-working-empty">今は誰も出勤していません</p>
+        <p class="ah-notyet" id="ah-notyet"></p>
+      </div>
+
+      <div class="card">
+        <h2>打刻ボード</h2>
+        <p class="hint">名前をタップして選んでから、ボタンを押してください。そのスタッフとして打刻が記録されます。</p>
+        <div class="kiosk-grid" id="ah-grid"></div>
+        <div class="clock-status" id="ah-status">名前を選んでください</div>
+        <div class="clock-grid">
+          <button class="btn-clock btn-in" id="ah-btn-in" disabled>出勤する</button>
+          <button class="btn-clock btn-break" id="ah-btn-break-start" disabled>休憩に入る</button>
+          <button class="btn-clock btn-break" id="ah-btn-break-end" disabled>休憩おわり</button>
+          <button class="btn-clock btn-out" id="ah-btn-out" disabled>退勤する</button>
+        </div>
+        <div id="ah-today" class="hint" style="margin-top:12px"></div>
+      </div>
+    </div>
+
     <!-- 今日のあなたのシフト（真っ先に見えるように先頭に置く） -->
     <div class="card today-shift-card" id="today-shift-card">
       <h2>今日のあなたのシフト</h2>
@@ -70,7 +103,7 @@
       <div id="quota-body"></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="now-working-card">
       <h2>いま出勤中のみんな</h2>
       <div class="now-working" id="now-working"></div>
       <p class="hint" id="now-working-empty">まだ誰も出勤していません</p>

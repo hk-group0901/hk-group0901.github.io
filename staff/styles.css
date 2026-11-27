@@ -131,6 +131,22 @@ h1, h2, h3 { line-height: 1.35; }
 .kiosk-name.is-break .k-state { color: #7A3E00; }
 .kiosk-name.is-done { opacity: .55; }
 
+/* ---------- 管理者ホーム（admin の打刻タブ） ---------- */
+.ah-clock-card {
+  text-align: center; border-color: var(--accent);
+  background: linear-gradient(135deg, #FFFFFF, var(--accent-soft));
+}
+.ah-date { font-size: 1.05rem; font-weight: 800; color: var(--ink-sub); }
+.ah-clock {
+  font-size: 3.1rem; font-weight: 900; line-height: 1.15;
+  color: var(--accent-deep); letter-spacing: .02em;
+}
+.ah-greeting { font-size: 1.28rem; font-weight: 900; color: var(--accent); margin-top: 2px; }
+.ah-summary { margin-top: 10px; font-size: 1.05rem; font-weight: 700; }
+.ah-summary b { color: var(--accent-deep); font-size: 1.22rem; }
+.ah-working-count { color: var(--accent-deep); }
+.ah-notyet { margin-top: 12px; font-weight: 700; font-size: .98rem; }
+
 /* ---------- ノルマ進捗カード ---------- */
 .quota-card { border-color: var(--peach); background: linear-gradient(135deg, #FFFDF8, var(--peach-soft)); }
 .quota-sales { font-size: 1.15rem; font-weight: 800; }
