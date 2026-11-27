@@ -323,6 +323,7 @@ $("hello-name").textContent = "打刻画面（お店のiPad）";
 $("kiosk-area").style.display = "block";
 $("clock-guide").style.display = "none";
 $("personal-clock-extra").style.display = "none";
+$("today-shift-card").style.display = "none";
 }
 $("hello-date").textContent = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日（${DOW[now.getDay()]}）`;
 showView("clock");
@@ -704,11 +705,42 @@ $("now-working-empty").style.display = working.length? "none": "block";
 
 if (IS_KIOSK()) { renderKiosk(records); return;}
 
+renderTodayShift();
 renderQuotaCard();
 const rec = myToday(records);
 const lines = todayLines(rec);
 $("today-records").innerHTML = lines.length? lines.map(esc).join("<br>"): "まだ記録がありません";
 renderCorrections();
+}
+
+// ---------- 今日のあなたのシフト（ホーム先頭） ----------
+// 管理者画面と同じく、ホームを開いてすぐ自分の今日のシフトが見えるようにする。
+// データ取得は既存の DB.listShifts（今月分）を使う。
+async function renderTodayShift() {
+const body = $("today-shift-body");
+if (!body || !ME) return;
+const now = new Date();
+const today = fmtDate(now);
+try {
+const shifts = await DB.listShifts(now.getFullYear(), now.getMonth());
+const mine = shifts
+.filter((s) => s.staff_id === ME.id && s.date === today)
+.sort((a, b) => ((a.start_time || BAND[a.band].start) < (b.start_time || BAND[b.band].start)? -1: 1));
+if (!mine.length) {
+body.className = "hint";
+body.textContent = "今日はシフトが入っていません。ゆっくり休んでね";
+return;
+}
+body.className = "";
+body.innerHTML = mine.map((s) => {
+const st = s.start_time || BAND[s.band].start;
+const en = s.end_time || BAND[s.band].end;
+return `<div class="today-shift-row"><span class="tag solid ${s.band}">${BAND[s.band].label}</span><span class="today-shift-time">${st}–${en}</span></div>`;
+}).join("");
+} catch (e) {
+body.className = "hint";
+body.textContent = "今日のシフトを読み込めませんでした";
+}
 }
 
 // ---------- ノルマ進捗カード（対象スタッフのみ） ----------
@@ -958,7 +990,8 @@ const tags = ["lunch", "dinner", "late"]
 .filter((b) => reqMap.has(ds + "|" + b))
 .map((b) => `<span class="tag ${b}">${BAND[b].label}</span>`).join("");
 const sel = reqState.selected.has(ds)? " selected": "";
-return `<button class="cal-day${closed? " closed": ""}${sel}" data-date="${ds}" ${closed? "disabled": ""}>
+const dowCls = date.getDay() === 0? " sun": date.getDay() === 6? " sat": "";
+return `<button class="cal-day${closed? " closed": ""}${sel}${dowCls}" data-date="${ds}" ${closed? "disabled": ""}>
 <span class="dnum">${d}</span>${closed? '<span class="tag">定休日</span>': tags}</button>`;
 }, (ds) => {
 if (reqState.selected.has(ds)) reqState.selected.delete(ds);
@@ -1053,7 +1086,8 @@ if (!names.length) return "";
 const mine = dayShifts.some((s) => s.band === b && s.staff_id === ME.id)? " mine": "";
 return `<span class="tag ${b}${mine}">${BAND[b].label[0]}：${names.join("・")}</span>`;
 }).join("");
-return `<button class="cal-day${closed? " closed": ""}${ds === fmtDate(new Date())? " today": ""}" data-date="${ds}">
+const dowCls = date.getDay() === 0? " sun": date.getDay() === 6? " sat": "";
+return `<button class="cal-day${closed? " closed": ""}${ds === fmtDate(new Date())? " today": ""}${dowCls}" data-date="${ds}">
 <span class="dnum">${d}</span>${closed? '<span class="tag">定休日</span>': tags}</button>`;
 }, (ds) => renderDayDetail(ds, byDate.get(ds) || []));
 }
@@ -1072,7 +1106,7 @@ const left = ((toMin(st) - AXIS_START) / (AXIS_END - AXIS_START)) * 100;
 const width = ((toMin(en) - toMin(st)) / (AXIS_END - AXIS_START)) * 100;
 return `<div class="bar ${x.band}" style="left:${left}%;width:${width}%"><span class="bar-time">${st}–${en}</span></div>`;
 }).join("");
-return `<tr><td class="name">${esc(s.name)}</td><td><div class="bar-cell">${bars}</div></td></tr>`;
+return `<tr${s.id === ME.id? ' class="me"': ""}><td class="name">${esc(s.name)}</td><td><div class="bar-cell">${bars}</div></td></tr>`;
 }).join("");
 $("day-detail").innerHTML = `<table>${rows}</table>`;
 $("day-detail-card").scrollIntoView({ behavior: "smooth", block: "start"});

@@ -6,7 +6,7 @@
 <title>辛麺屋 物語 スタッフアプリ</title>
 <meta name="description" content="辛麺屋 物語の打刻・シフト希望・給与明細アプリ">
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#D94036">
+<meta name="theme-color" content="#DE3E6E">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -56,8 +56,14 @@
     <div class="today" id="hello-date"></div>
   </header>
 
-  <!-- ===== 打刻 ===== -->
+  <!-- ===== ホーム（打刻タブ） ===== -->
   <section id="view-clock" class="view">
+    <!-- 今日のあなたのシフト（真っ先に見えるように先頭に置く） -->
+    <div class="card today-shift-card" id="today-shift-card">
+      <h2>今日のあなたのシフト</h2>
+      <div id="today-shift-body" class="hint">読み込み中…</div>
+    </div>
+
     <!-- ノルマ進捗（対象スタッフのみ表示） -->
     <div class="card quota-card" id="quota-card" style="display:none">
       <h2>今月のノルマ</h2>
@@ -164,7 +170,7 @@
   <section id="view-schedule" class="view">
     <div class="card">
       <h2>みんなのシフト</h2>
-      <p class="hint">日付をタップすると、その日の詳しいシフトが見られます。あなたのシフトは緑の枠で囲まれます。</p>
+      <p class="hint">日付をタップすると、その日の詳しいシフトが見られます。あなたが入る区分はピンクの濃い枠で囲まれます。</p>
       <div class="cal-head">
         <button class="btn-nav" id="sch-prev" aria-label="前の月">‹</button>
         <div class="month-title" id="sch-month-title"></div>
