@@ -33,6 +33,12 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html { font-size: 18px; }
+/* ページ全体の横はみ出し防止（安全網）：横スクロールは表の入れ物の中だけで完結させる。
+   clip が使える環境では sticky を壊さない clip を優先する。 */
+html, body { overflow-x: hidden; }
+@supports (overflow-x: clip) {
+  html, body { overflow-x: clip; }
+}
 body {
   margin: 0; background: var(--bg); color: var(--ink);
   font-family: var(--font); line-height: 1.6;
@@ -98,7 +104,7 @@ h1, h2, h3 { line-height: 1.35; }
   100% { box-shadow: 0 0 0 0 rgba(47,168,79,0); }
 }
 .clock-status { font-size: 1.12rem; font-weight: 800; text-align: center; margin: 8px 0 14px; }
-.clock-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.clock-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .btn-clock {
   border: none; border-radius: 24px; padding: 22px 8px;
   font-size: 1.25rem; font-weight: 800; color: #fff;
@@ -115,7 +121,7 @@ h1, h2, h3 { line-height: 1.35; }
 .guide-text { font-size: 1.08rem; font-weight: 700; text-align: center; margin: 6px 0 2px; }
 
 /* ---------- 打刻キオスク（お店のiPad） ---------- */
-.kiosk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0 14px; }
+.kiosk-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 10px 0 14px; }
 .kiosk-name {
   background: var(--card); border: 3px solid var(--line); border-radius: 20px;
   padding: 16px 8px; color: var(--ink);
@@ -168,7 +174,7 @@ h1, h2, h3 { line-height: 1.35; }
   box-shadow: 0 2px 6px rgba(194, 42, 88, .10);
 }
 .btn-nav:active { transform: scale(.94); }
-.calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.calendar { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
 .cal-dow { text-align: center; font-weight: 800; font-size: .92rem; color: var(--ink-sub); padding: 4px 0; }
 .cal-dow.sun { color: var(--accent-deep); }
 .cal-dow.sat { color: var(--blue); }
@@ -176,6 +182,7 @@ h1, h2, h3 { line-height: 1.35; }
   background: var(--card); border: 2px solid var(--line); border-radius: 16px;
   min-height: 78px; padding: 5px 4px; font-size: .8rem; text-align: left;
   display: flex; flex-direction: column; gap: 3px; width: 100%;
+  min-width: 0; /* グリッド列をチップの min-content で押し広げない */
 }
 .cal-day .dnum { font-size: 1.05rem; font-weight: 800; }
 .cal-day.sun .dnum { color: var(--accent-deep); }
@@ -189,6 +196,7 @@ h1, h2, h3 { line-height: 1.35; }
 .cal-day .tag {
   border-radius: 999px; padding: 2px 7px; font-size: .72rem; font-weight: 800;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%; min-width: 0;
 }
 /* 希望カレンダーのチップ＝淡色（提出ずみの希望） */
 .tag.lunch  { background: var(--peach-soft);  color: #7A3E00; }
@@ -202,7 +210,7 @@ h1, h2, h3 { line-height: 1.35; }
 .cal-day.closed .tag { background: #EFE0E6; color: #A98D99; }
 
 /* 区分ピッカー */
-.band-picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 10px 0; }
+.band-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 10px 0; }
 .btn-band {
   border: 3px solid var(--line); background: var(--card); border-radius: 20px;
   padding: 15px 4px; font-size: 1.08rem; font-weight: 800; color: var(--ink);
@@ -224,7 +232,8 @@ h1, h2, h3 { line-height: 1.35; }
 }
 
 /* ---------- 日別詳細（横棒グラフ） ---------- */
-.day-chart { overflow-x: auto; }
+/* 表と時刻軸は .day-scroll の中だけで横スクロールさせる（ページは広げない） */
+.day-scroll { overflow-x: auto; }
 .day-chart table { border-collapse: collapse; min-width: 520px; width: 100%; }
 .day-chart th, .day-chart td { border-bottom: 1px solid var(--line); padding: 7px 4px; font-size: .9rem; }
 .day-chart th.name, .day-chart td.name { width: 96px; font-weight: 800; white-space: nowrap; }
@@ -254,7 +263,7 @@ h1, h2, h3 { line-height: 1.35; }
 .pay-table tr.total td { border-bottom: none; font-weight: 900; font-size: 1.08rem; }
 .pay-actions { display: flex; gap: 10px; margin-top: 14px; }
 .btn-share {
-  flex: 1; border-radius: 18px; padding: 15px 6px; font-size: 1.05rem; font-weight: 800;
+  flex: 1; min-width: 0; border-radius: 18px; padding: 15px 6px; font-size: 1.05rem; font-weight: 800;
   border: 2px solid var(--accent); background: var(--accent-soft); color: var(--accent-deep);
 }
 .btn-share.alt { border-color: var(--blue); background: var(--blue-soft); color: #17456B; }
@@ -374,7 +383,7 @@ h1, h2, h3 { line-height: 1.35; }
   display: flex; padding: 8px 4px calc(8px + env(safe-area-inset-bottom));
 }
 .bottom-nav button {
-  flex: 1; background: none; border: none; color: var(--ink-sub);
+  flex: 1; min-width: 0; background: none; border: none; color: var(--ink-sub);
   font-size: .82rem; font-weight: 800; padding: 8px 2px; border-radius: 16px;
   display: flex; flex-direction: column; align-items: center; gap: 2px;
 }
@@ -457,4 +466,23 @@ h1, h2, h3 { line-height: 1.35; }
 .lock-logout {
   margin-top: 26px; background: none; border: none;
   color: var(--ink-sub); font-size: .95rem; text-decoration: underline; padding: 12px;
+}
+
+/* ---------- シフト確認カレンダー：名前入りチップは折り返して全文を見せる ---------- */
+/* 1行省略だと名前が見えないため、狭幅ではチップ内を改行して区分＋名前を残す */
+@media (max-width: 640px) {
+  #sch-calendar .tag {
+    white-space: normal; overflow-wrap: anywhere; line-height: 1.3;
+  }
+}
+
+/* ---------- スマホ狭幅（〜480px）：カレンダーを画面幅に収め、チップを読みやすく ---------- */
+@media (max-width: 480px) {
+  .view { padding: 14px 10px 8px; }
+  .card { padding: 14px; }
+  .calendar { gap: 4px; }
+  .cal-day { min-height: 74px; padding: 4px 2px; border-radius: 13px; }
+  .cal-day .dnum { font-size: 1rem; }
+  .cal-day .tag { padding: 2px 4px; font-size: .7rem; }
+  .cal-head .month-title { font-size: 1.15rem; }
 }
