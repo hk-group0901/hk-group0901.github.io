@@ -108,6 +108,28 @@ if (dow === 5 || dow === 6) add("吉村汐織", "late");
 };
 gen(now.getFullYear(), now.getMonth());
 gen(now.getFullYear(), now.getMonth() + 1 > 11? 0: now.getMonth() + 1);
+// シフト希望のサンプル（管理者の「提出状況」画面の確認用）：
+// 今月と来月分を、提出する6名のパターンで作る。
+// 沼口・神坂凛・阿久井は未提出のまま（未提出一覧の見え方も確認できる）。
+const reqGen = (y, m) => {
+const days = new Date(y, m + 1, 0).getDate();
+const byName = (n) => staff.find((s) => s.name === n).id;
+const addR = (n, d, band) => db.shift_requests.push({
+id: uid(), staff_id: byName(n), date: fmtDate(new Date(y, m, d)), band,
+status: "pending", created_at: new Date().toISOString()});
+for (let d = 1; d <= days; d++) {
+const dow = new Date(y, m, d).getDay();
+if (dow === 2) continue; // 火曜定休
+if (dow!== 0) addR("妹尾里佳", d, "lunch");
+if (dow === 1 || dow === 3 || dow === 5) addR("黒木一真", d, "lunch");
+if (dow === 5 || dow === 6) { addR("山口直也", d, "late"); addR("吉村汐織", d, "dinner"); addR("吉村汐織", d, "late");}
+if (dow === 4 || dow === 5 || dow === 6 || dow === 0) addR("矢野恵", d, "late");
+if (dow === 1 || dow === 3) addR("福島妙子", d, "late");
+}
+};
+reqGen(now.getFullYear(), now.getMonth());
+const nextM = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+reqGen(nextM.getFullYear(), nextM.getMonth());
 // 先月分も生成する：辛麺屋出勤手当は確定シフトの日数で数えるため、
 // 先月の給与明細プレビューでも手当が付くように（打刻からは数えない）
 const prevGen = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -292,6 +314,65 @@ saveDemo(); return;
 await sb.from("correction_requests").update(
 { status: decision, decided_by: ME.id, decided_at: new Date().toISOString() }).eq("id", id);
 try { await sb.functions.invoke("correction-request-decided", { body: { correction_request_id: id } }); } catch (e) {}
+},
+// ---------- 管理者用 ----------
+async listAllRequests(y, m) {
+// 全員分のシフト希望（管理者の提出状況・確定作業用）
+const from = fmtDate(new Date(y, m, 1)), to = fmtDate(new Date(y, m + 1, 0));
+if (DEMO) return demoDB.shift_requests.filter((r) => r.date >= from && r.date <= to);
+const { data } = await sb.from("shift_requests").select("*").gte("date", from).lte("date", to);
+return data || [];
+},
+async saveShift(row) {
+// 確定シフトの保存。row.id があれば時刻の更新、なければ
+// (staff_id, date, band) の一意制約で upsert する。
+if (DEMO) {
+if (row.id) {
+const i = demoDB.shifts.findIndex((s) => s.id === row.id);
+if (i >= 0) demoDB.shifts[i] = { ...demoDB.shifts[i], ...row };
+else demoDB.shifts.push(row);
+} else {
+const i = demoDB.shifts.findIndex((s) => s.staff_id === row.staff_id && s.date === row.date && s.band === row.band);
+if (i >= 0) demoDB.shifts[i] = { ...demoDB.shifts[i], ...row, id: demoDB.shifts[i].id };
+else demoDB.shifts.push({ ...row, id: uid() });
+}
+saveDemo(); return;
+}
+if (row.id) {
+await sb.from("shifts").update({ start_time: row.start_time, end_time: row.end_time }).eq("id", row.id);
+} else {
+await sb.from("shifts").upsert(
+{ staff_id: row.staff_id, date: row.date, band: row.band, start_time: row.start_time, end_time: row.end_time },
+{ onConflict: "staff_id,date,band" });
+}
+},
+async deleteShift(id) {
+if (DEMO) { demoDB.shifts = demoDB.shifts.filter((s) => s.id !== id); saveDemo(); return; }
+await sb.from("shifts").delete().eq("id", id);
+},
+async addNotifications(rows) {
+// アプリ内お知らせへの直接登録（管理者のシフト確定通知用）。
+// 本番は RLS ポリシー notifications_insert_admin（管理者のみ INSERT 可）を使う。
+// 失敗してもシフト確定そのものは成立しているため、例外は握りつぶす。
+if (!rows.length) return;
+if (DEMO) {
+rows.forEach((r) => demoDB.notifications.push({ read: false, work_request_id: null, ...r }));
+saveDemo(); return;
+}
+try { await sb.from("notifications").insert(rows.map((r) => ({ ...r, work_request_id: null }))); } catch (e) {}
+},
+async setMonthlySales(y, m, sales) {
+// 月売上の登録・更新（ノルマ判定の元データ）
+const monthStr = `${y}-${pad(m + 1)}-01`;
+if (DEMO) {
+demoDB.monthly_sales = demoDB.monthly_sales || [];
+const r = demoDB.monthly_sales.find((x) => x.month === monthStr);
+if (r) r.sales = sales; else demoDB.monthly_sales.push({ month: monthStr, sales });
+saveDemo(); return;
+}
+await sb.from("monthly_sales").upsert(
+{ month: monthStr, sales, updated_at: new Date().toISOString() },
+{ onConflict: "month" });
 }
 };
 
@@ -330,7 +411,11 @@ $("personal-clock-extra").style.display = "none";
 $("today-shift-card").style.display = "none";
 }
 $("hello-date").textContent = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日（${DOW[now.getDay()]}）`;
-showView("clock");
+// 管理者（神坂さん）だけ下部ナビに「管理者」ボタンを出す
+$("nav-admin").style.display = ME.role === "admin"? "": "none";
+// 管理者はログイン直後・セッション復元時とも管理者画面から入る。
+// 通常のスタッフ向け表示へは下部ナビ（打刻・シフト等）から切り替えられる。
+showView(ME.role === "admin"? "admin": "clock");
 await renderClock();
 await refreshInboxBadge();
 maybeSeedDemoInbox();
@@ -401,7 +486,8 @@ $("btn-lock-logout").addEventListener("click", doLogout);
 // ---------- 画面遷移 ----------
 function showView(name) {
 if (IS_KIOSK()) name = "clock"; // 打刻専用モードでは打刻画面だけ
-document.querySelectorAll("#app-shell.view").forEach((v) => v.classList.remove("active"));
+if (name === "admin" && (!ME || ME.role!== "admin")) name = "clock"; // 管理者画面は admin のみ
+document.querySelectorAll("#app-shell .view").forEach((v) => v.classList.remove("active"));
 $("view-" + name).classList.add("active");
 document.querySelectorAll("#bottom-nav button").forEach((b) =>
 b.classList.toggle("active", b.dataset.view === name));
@@ -411,6 +497,7 @@ if (name === "schedule") renderSchedule();
 if (name === "pay") renderPay();
 if (name === "inbox") renderInbox();
 if (name === "settings") renderSettings();
+if (name === "admin") renderAdmin();
 window.scrollTo(0, 0);
 }
 document.querySelectorAll("#bottom-nav button").forEach((b) =>
@@ -1527,6 +1614,351 @@ toast("通知をONにしました");
 toast("通知の設定に失敗しました");
 }
 });
+
+// ============================================================
+// 管理者画面（role='admin' のみ）
+// ------------------------------------------------------------
+// ・シフト希望の提出状況／日別シフト（全員・名前列は横スクロール時も
+//   左端に固定）／シフトの確定・編集／給与一覧と個人明細／
+//   税理士送付用の一括出力（CSV・コピー・共有）／月の売上入力。
+// ・副管理者（subadmin）には管理者メニュー自体を出さない
+//   （訂正承認と希望閲覧は従来の導線のまま）。
+// ・給与計算は既存の computePayroll をそのまま使う（計算は変えない）。
+// ============================================================
+const admState = { y: new Date().getFullYear(), m: new Date().getMonth(),
+day: fmtDate(new Date()), editDate: fmtDate(new Date()), payDetailId: null};
+let admPayrolls = []; // {staff, p} 給与一覧の計算結果（CSV・コピー用に保持）
+const IS_ADMIN = () =>!!ME && ME.role === "admin";
+
+async function renderAdmin() {
+if (!IS_ADMIN()) return;
+const { y, m} = admState;
+$("adm-month-title").textContent = `${y}年${m + 1}月`;
+if (!$("adm-day-date").value) $("adm-day-date").value = admState.day;
+if (!$("adm-edit-date").value) $("adm-edit-date").value = admState.editDate;
+await renderAdminRequests();
+await renderAdminDay();
+await renderAdminEditor();
+await renderAdminPayrolls();
+await renderAdminSales();
+}
+$("adm-prev").addEventListener("click", () => { shiftMonth(admState, -1); admState.payDetailId = null; $("adm-pay-detail").innerHTML = ""; renderAdmin();});
+$("adm-next").addEventListener("click", () => { shiftMonth(admState, 1); admState.payDetailId = null; $("adm-pay-detail").innerHTML = ""; renderAdmin();});
+
+// ---------- 1. シフト希望の提出状況 ----------
+async function renderAdminRequests() {
+const { y, m} = admState;
+const reqs = await DB.listAllRequests(y, m);
+const byStaff = new Map();
+reqs.forEach((r) => {
+if (!byStaff.has(r.staff_id)) byStaff.set(r.staff_id, []);
+byStaff.get(r.staff_id).push(r);
+});
+const submitted = STAFF.filter((s) => (byStaff.get(s.id) || []).length > 0);
+const missing = STAFF.filter((s) =>!(byStaff.get(s.id) || []).length);
+$("adm-req-summary").innerHTML =
+`提出済み ${submitted.length}名 ／ 未提出 ${missing.length}名` +
+(missing.length? `<br>未提出：${missing.map((s) => esc(s.name)).join("、")}`: "");
+$("adm-req-list").innerHTML = STAFF.map((s) => {
+const list = (byStaff.get(s.id) || []).slice()
+.sort((a, b) => (a.date < b.date? -1: a.date > b.date? 1: a.band < b.band? -1: 1));
+if (!list.length)
+return `<div class="adm-req-staff"><span class="adm-badge ng">未提出</span> <b>${esc(s.name)}</b></div>`;
+const byDate = new Map();
+list.forEach((r) => {
+if (!byDate.has(r.date)) byDate.set(r.date, []);
+byDate.get(r.date).push(r.band);
+});
+const lines = [...byDate.entries()].map(([ds, bands]) => {
+const d = new Date(ds);
+return `${d.getMonth() + 1}/${d.getDate()}（${DOW[d.getDay()]}）${bands.map((b) => BAND[b].label).join("・")}`;
+});
+return `<div class="adm-req-staff"><span class="adm-badge ok">提出済み</span> <b>${esc(s.name)}</b>` +
+`<div class="hint">${lines.map(esc).join("<br>")}</div></div>`;
+}).join("");
+}
+
+// ---------- 2. 日別シフト（全員分・名前列 sticky） ----------
+async function renderAdminDay() {
+const ds = admState.day;
+const d = new Date(ds);
+const shifts = await DB.listShifts(d.getFullYear(), d.getMonth());
+const dayShifts = shifts.filter((s) => s.date === ds);
+const AXIS_START = 600, AXIS_END = 1620; // 10:00〜27:00
+const toMin = (t) => { const [h, mm] = t.split(":").map(Number); return h * 60 + mm;};
+const rows = STAFF.map((s) => {
+const mine = dayShifts.filter((x) => x.staff_id === s.id)
+.sort((a, b) => toMin(a.start_time || BAND[a.band].start) - toMin(b.start_time || BAND[b.band].start));
+const times = mine.map((x) => `${x.start_time || BAND[x.band].start}–${x.end_time || BAND[x.band].end}`).join("／");
+const bars = mine.map((x) => {
+const st = x.start_time || BAND[x.band].start, en = x.end_time || BAND[x.band].end;
+const left = ((toMin(st) - AXIS_START) / (AXIS_END - AXIS_START)) * 100;
+const width = Math.max(3, ((toMin(en) - toMin(st)) / (AXIS_END - AXIS_START)) * 100);
+return `<div class="bar ${x.band}" style="left:${left}%;width:${width}%"><span class="bar-time">${st}–${en}</span></div>`;
+}).join("");
+return `<tr${s.id === ME.id? ' class="me"': ""}><td class="adm-name-cell">${esc(s.name)}` +
+`${times? `<span class="adm-times">${esc(times)}</span>`: ""}</td>` +
+`<td><div class="bar-cell">${bars}</div></td></tr>`;
+}).join("");
+$("adm-day-chart").innerHTML =
+`<div class="adm-day-scroll"><table class="adm-day-table">${rows}</table>` +
+`<div class="adm-axis"><span>10時</span><span>14時</span><span>18時</span><span>22時</span><span>27時</span></div></div>` +
+`<p class="hint" style="margin-top:8px">${d.getMonth() + 1}月${d.getDate()}日（${DOW[d.getDay()]}）の確定シフト</p>`;
+}
+$("adm-day-date").addEventListener("change", () => {
+admState.day = $("adm-day-date").value || admState.day;
+renderAdminDay();
+});
+
+// ---------- 3. シフトの確定・編集 ----------
+function normalizeTime(t) {
+const mm = /^(\d{1,2}):([0-5]\d)$/.exec(String(t || "").trim());
+if (!mm) return null;
+const h = Number(mm[1]);
+if (h > 29) return null; // 27:00・28:00 表記まで許容
+return `${pad(h)}:${mm[2]}`;
+}
+async function renderAdminEditor() {
+const ds = admState.editDate;
+const d = new Date(ds);
+const shifts = await DB.listShifts(d.getFullYear(), d.getMonth());
+const dayShifts = shifts.filter((s) => s.date === ds);
+const box = $("adm-edit-list");
+box.innerHTML = "";
+STAFF.forEach((s) => {
+const mine = dayShifts.filter((x) => x.staff_id === s.id);
+const div = document.createElement("div");
+div.className = "adm-edit-staff";
+let html = `<div class="adm-edit-name">${esc(s.name)}</div>`;
+mine.forEach((x) => {
+html += `<div class="adm-shift-row" data-shift="${x.id}">
+<span class="tag solid ${x.band}">${BAND[x.band].label}</span>
+<input type="text" class="adm-st" value="${esc(x.start_time || BAND[x.band].start)}" inputmode="numeric" aria-label="開始時刻">
+<span>〜</span>
+<input type="text" class="adm-en" value="${esc(x.end_time || BAND[x.band].end)}" inputmode="numeric" aria-label="終了時刻">
+<button type="button" class="btn-mini accent" data-act="save">保存</button>
+<button type="button" class="btn-mini danger" data-act="del">削除</button>
+</div>`;
+});
+html += `<div class="adm-shift-row">
+<select class="adm-new-band" aria-label="区分">
+<option value="lunch">ランチ</option>
+<option value="dinner">ディナー</option>
+<option value="late">深夜</option>
+</select>
+<input type="text" class="adm-new-st" value="${BAND.lunch.start}" inputmode="numeric" aria-label="開始時刻">
+<span>〜</span>
+<input type="text" class="adm-new-en" value="${BAND.lunch.end}" inputmode="numeric" aria-label="終了時刻">
+<button type="button" class="btn-mini" data-act="add">追加</button>
+</div>`;
+div.innerHTML = html;
+div.querySelectorAll("[data-shift]").forEach((rowEl) => {
+const shiftId = rowEl.dataset.shift;
+rowEl.querySelector('[data-act="save"]').addEventListener("click", async () => {
+const st = normalizeTime(rowEl.querySelector(".adm-st").value);
+const en = normalizeTime(rowEl.querySelector(".adm-en").value);
+if (!st ||!en) { toast("時刻は 18:00 のように入れてね"); return;}
+await DB.saveShift({ id: shiftId, start_time: st, end_time: en});
+toast("保存しました");
+renderAdminEditor(); renderAdminDay();
+});
+rowEl.querySelector('[data-act="del"]').addEventListener("click", async () => {
+if (!confirm("このシフトを削除しますか？")) return;
+await DB.deleteShift(shiftId);
+toast("削除しました");
+renderAdminEditor(); renderAdminDay();
+});
+});
+const bandSel = div.querySelector(".adm-new-band");
+const stIn = div.querySelector(".adm-new-st"), enIn = div.querySelector(".adm-new-en");
+bandSel.addEventListener("change", () => {
+stIn.value = BAND[bandSel.value].start;
+enIn.value = BAND[bandSel.value].end;
+});
+div.querySelector('[data-act="add"]').addEventListener("click", async () => {
+const st = normalizeTime(stIn.value), en = normalizeTime(enIn.value);
+if (!st ||!en) { toast("時刻は 18:00 のように入れてね"); return;}
+if (mine.some((x) => x.band === bandSel.value)) {
+toast("その区分はもう入っています。上の行で直してね"); return;
+}
+await DB.saveShift({ staff_id: s.id, date: ds, band: bandSel.value, start_time: st, end_time: en});
+toast(`${s.name}さんのシフトを追加しました`);
+renderAdminEditor(); renderAdminDay();
+});
+box.appendChild(div);
+});
+}
+$("adm-edit-date").addEventListener("change", () => {
+admState.editDate = $("adm-edit-date").value || admState.editDate;
+renderAdminEditor();
+});
+$("btn-adm-from-requests").addEventListener("click", async () => {
+const ds = admState.editDate;
+const d = new Date(ds);
+const reqs = (await DB.listAllRequests(d.getFullYear(), d.getMonth())).filter((r) => r.date === ds);
+if (!reqs.length) { toast("この日の希望はありませんでした"); return;}
+const shifts = await DB.listShifts(d.getFullYear(), d.getMonth());
+const have = new Set(shifts.filter((s) => s.date === ds).map((s) => s.staff_id + "|" + s.band));
+const todo = reqs.filter((r) =>!have.has(r.staff_id + "|" + r.band));
+for (const r of todo) {
+await DB.saveShift({ staff_id: r.staff_id, date: ds, band: r.band, start_time: null, end_time: null});
+}
+toast(todo.length? `${todo.length}件の希望を確定シフトに反映しました`: "希望はすべて反映済みでした");
+renderAdminEditor(); renderAdminDay();
+});
+$("btn-adm-notify").addEventListener("click", async () => {
+const ds = admState.editDate;
+const d = new Date(ds);
+const shifts = await DB.listShifts(d.getFullYear(), d.getMonth());
+const dayShifts = shifts.filter((s) => s.date === ds);
+const targets = [...new Set(dayShifts.map((s) => s.staff_id))];
+if (!targets.length) { toast("この日は確定シフトがありません"); return;}
+const rows = targets.map((sid) => {
+const mine = dayShifts.filter((s) => s.staff_id === sid)
+.map((s) => `${BAND[s.band].label} ${s.start_time || BAND[s.band].start}–${s.end_time || BAND[s.band].end}`).join("、");
+return { id: uid(), staff_id: sid, type: "shift_confirmed",
+title: "シフトが確定しました",
+body: `${d.getMonth() + 1}月${d.getDate()}日（${DOW[d.getDay()]}） ${mine} で確定しました。`,
+created_at: new Date().toISOString()};
+});
+await DB.addNotifications(rows);
+toast(`${targets.length}名に確定のお知らせを送りました`);
+});
+
+// ---------- 4. 給与一覧と個人明細 ----------
+async function renderAdminPayrolls() {
+const { y, m} = admState;
+admPayrolls = [];
+for (const s of STAFF) {
+admPayrolls.push({ staff: s, p: await computePayroll(s, y, m)});
+}
+$("adm-pay-list").innerHTML = admPayrolls.map(({ staff: s, p}, i) =>
+`<button type="button" class="adm-pay-row" data-pay-idx="${i}">
+<span><span class="pname">${esc(s.name)}</span><br>
+<span class="adm-pay-sub">支給 ${fmtYen(p.gross)}／控除 ${fmtYen(p.dedTotal)}／${p.days}日</span></span>
+<span class="pnet">${fmtYen(p.net)}</span>
+</button>`).join("");
+$("adm-pay-list").querySelectorAll("[data-pay-idx]").forEach((b) =>
+b.addEventListener("click", () => renderAdminPayDetail(Number(b.dataset.payIdx))));
+if (admState.payDetailId) {
+const idx = admPayrolls.findIndex((x) => x.staff.id === admState.payDetailId);
+if (idx >= 0) renderAdminPayDetail(idx);
+else { admState.payDetailId = null; $("adm-pay-detail").innerHTML = "";}
+}
+}
+function renderAdminPayDetail(idx) {
+const { staff: s, p} = admPayrolls[idx];
+if (!s) return;
+admState.payDetailId = s.id;
+const row = (label, val) => `<tr><td>${esc(label)}</td><td class="num">${esc(val)}</td></tr>`;
+$("adm-pay-detail").innerHTML = `
+<div class="card" style="text-align:center">
+<div style="font-size:1.2rem;font-weight:900">給料支払明細書（${admState.y}年${admState.m + 1}月分）</div>
+<div style="font-size:1.05rem;font-weight:800;margin-top:4px">${esc(s.name)} 殿</div>
+</div>
+<div class="pay-hero">
+<div class="label">差引支給額（お給料）</div>
+<div class="amount">${fmtYen(p.net)}</div>
+</div>
+<div class="card"><h2>勤怠</h2><table class="pay-table">
+${row("労働期間", p.period) + row("労働日数", `${p.days}日`) + row("労働時間", fmtHM(p.workMin)) + row("所定時間外労働", fmtHM(p.otMin))}
+</table></div>
+<div class="card"><h2>支給額</h2><table class="pay-table">
+${p.earnings.map((e) => row(e.label, fmtYen(e.amount))).join("")}
+<tr class="total"><td>支給合計</td><td class="num">${fmtYen(p.gross)}</td></tr>
+</table></div>
+<div class="card"><h2>控除額</h2><table class="pay-table">
+${p.deductions.map((dd) => row(dd.label, fmtYen(dd.amount))).join("")}
+<tr class="total"><td>控除合計</td><td class="num">${fmtYen(p.dedTotal)}</td></tr>
+</table></div>`;
+$("adm-pay-detail").scrollIntoView({ behavior: "smooth", block: "start"});
+}
+
+// ---------- 5. 税理士送付用の一括出力 ----------
+const PAYROLL_CSV_COLS = ["氏名", "労働日数", "労働時間", "所定時間外労働",
+"基本給", "役職手当", "深夜手当", "みなし残業", "交通費", "ドリンクバック",
+"所定時間外賃金", "その他手当", "支給合計",
+"健康保険料", "厚生年金", "雇用保険料", "所得税", "子ども・子育て支援金",
+"前払金", "住民税", "控除合計", "差引支給額"];
+function payrollCsvRow(s, p) {
+const earn = (label) => { const e = p.earnings.find((x) => x.label === label); return e? e.amount: 0;};
+const known = ["基本給", "役職手当", "深夜手当", "みなし残業", "交通費", "ドリンクバック", "所定時間外賃金"];
+const other = p.earnings.filter((e) =>!known.includes(e.label)).reduce((a, e) => a + e.amount, 0);
+const ded = (label) => { const d = p.deductions.find((x) => x.label === label); return d? d.amount: 0;};
+return [s.name, p.days, fmtHM(p.workMin), fmtHM(p.otMin),
+earn("基本給"), earn("役職手当"), earn("深夜手当"), earn("みなし残業"),
+earn("交通費"), earn("ドリンクバック"), earn("所定時間外賃金"), other, p.gross,
+ded("健康保険料"), ded("厚生年金"), ded("雇用保険料"), ded("所得税"),
+ded("子ども・子育て支援金"), ded("前払金"), ded("住民税"), p.dedTotal, p.net];
+}
+function buildPayrollCsv() {
+const escCsv = (v) => { const t = String(v); return /[",\n]/.test(t)? `"${t.replace(/"/g, '""')}"`: t;};
+const lines = [PAYROLL_CSV_COLS.join(",")];
+admPayrolls.forEach(({ staff: s, p}) => lines.push(payrollCsvRow(s, p).map(escCsv).join(",")));
+return lines.join("\r\n");
+}
+function payrollAllText() {
+const L = [`給与データ（${admState.y}年${admState.m + 1}月分）`, "株式会社H&Kグループ", ""];
+admPayrolls.forEach(({ staff: s, p}) => {
+L.push(`■ ${s.name}`);
+L.push(`労働日数：${p.days}日／労働時間：${fmtHM(p.workMin)}／所定時間外労働：${fmtHM(p.otMin)}`);
+p.earnings.forEach((e) => L.push(`${e.label}：${fmtYen(e.amount)}`));
+L.push(`支給合計：${fmtYen(p.gross)}`);
+p.deductions.forEach((d) => L.push(`${d.label}：${fmtYen(d.amount)}`));
+L.push(`控除合計：${fmtYen(p.dedTotal)}`);
+L.push(`差引支給額：${fmtYen(p.net)}`);
+L.push("");
+});
+return L.join("\n");
+}
+$("btn-adm-csv").addEventListener("click", () => {
+if (!admPayrolls.length) { toast("先に給与一覧を表示してね"); return;}
+const blob = new Blob(["\uFEFF" + buildPayrollCsv()], { type: "text/csv;charset=utf-8"});
+const a = document.createElement("a");
+a.href = URL.createObjectURL(blob);
+a.download = `給与データ_${admState.y}年${admState.m + 1}月分.csv`;
+document.body.appendChild(a);
+a.click();
+a.remove();
+setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+toast("CSVをダウンロードしました");
+});
+$("btn-adm-copy-all").addEventListener("click", async () => {
+if (!admPayrolls.length) { toast("先に給与一覧を表示してね"); return;}
+try { await navigator.clipboard.writeText(payrollAllText()); toast("全員分をコピーしました");}
+catch (e) { toast("コピーできませんでした");}
+});
+$("btn-adm-share-all").addEventListener("click", async () => {
+if (!admPayrolls.length) { toast("先に給与一覧を表示してね"); return;}
+const text = payrollAllText();
+if (navigator.share) {
+try { await navigator.share({ title: "給与データ", text});} catch (e) { /* キャンセル時 */}
+} else {
+try { await navigator.clipboard.writeText(text); toast("共有機能がないためコピーしました");}
+catch (e) { toast("共有できませんでした");}
+}
+});
+
+// ---------- 6. 月の売上入力 ----------
+async function renderAdminSales() {
+const { y, m} = admState;
+const cur = await DB.getMonthlySales(y, m);
+$("adm-sales-current").textContent = cur == null? "未登録": fmtYen(cur);
+if (document.activeElement!== $("adm-sales-input"))
+$("adm-sales-input").value = cur == null? "": cur;
+}
+$("btn-adm-sales-save").addEventListener("click", async () => {
+const raw = $("adm-sales-input").value;
+const v = Number(raw);
+if (raw === "" ||!Number.isFinite(v) || v < 0) { toast("売上（円）を数字で入れてね"); return;}
+await DB.setMonthlySales(admState.y, admState.m, Math.round(v));
+toast(`${admState.y}年${admState.m + 1}月の売上を登録しました`);
+renderAdminSales();
+renderAdminPayrolls(); // ノルマ判定が変わるため給与一覧も更新する
+});
+
+// ---------- 7. 打刻の訂正依頼への導線 ----------
+$("btn-adm-goto-corrections").addEventListener("click", () => showView("inbox"));
 
 // ============================================================
 // 初期化

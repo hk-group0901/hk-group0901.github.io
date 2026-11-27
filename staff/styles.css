@@ -257,6 +257,72 @@ h1, h2, h3 { line-height: 1.35; }
 .btn-decline { flex: 1; background: var(--card); color: var(--ink); border: 2px solid var(--line); border-radius: 16px; padding: 14px; font-size: 1.05rem; font-weight: 700; }
 .empty-note { text-align: center; color: var(--ink-sub); padding: 24px 0; font-size: 1rem; }
 
+/* ---------- 管理者 ---------- */
+/* 日別シフト（全員）：横スクロールしても名前＋時刻の列が左端に固定される */
+.adm-day-scroll { overflow-x: auto; border: 2px solid var(--line); border-radius: 16px; }
+.adm-day-table { border-collapse: separate; border-spacing: 0; min-width: 660px; width: 100%; }
+.adm-day-table td { border-bottom: 1px solid var(--line); padding: 7px 6px; font-size: .9rem; }
+.adm-day-table tr:last-child td { border-bottom: none; }
+.adm-day-table tr.me td { background: #FFF3F7; }
+.adm-name-cell {
+  position: sticky; left: 0; z-index: 3;
+  width: 138px; min-width: 138px; max-width: 138px;
+  background: var(--card); font-weight: 800; white-space: nowrap;
+  box-shadow: 3px 0 0 var(--line); vertical-align: top;
+}
+.adm-day-table tr.me .adm-name-cell { background: #FFF3F7; color: var(--accent-deep); }
+.adm-name-cell .adm-times {
+  display: block; font-size: .78rem; font-weight: 700;
+  color: var(--ink-sub); white-space: normal; line-height: 1.45;
+}
+.adm-axis {
+  display: flex; justify-content: space-between;
+  font-size: .74rem; color: var(--ink-sub);
+  min-width: 518px; margin-left: 142px; padding: 4px 2px 6px;
+}
+/* 提出状況 */
+.adm-req-staff { border-bottom: 1px dashed var(--line); padding: 10px 0; }
+.adm-req-staff:last-child { border-bottom: none; }
+.adm-badge {
+  display: inline-block; border-radius: 999px; padding: 2px 10px;
+  font-size: .8rem; font-weight: 800; vertical-align: 2px;
+}
+.adm-badge.ok { background: var(--green-soft); color: var(--green-deep); border: 2px solid var(--green); }
+.adm-badge.ng { background: #FDECEC; color: #A12B2B; border: 2px solid #E5A3A3; }
+/* 給与一覧 */
+.adm-pay-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  width: 100%; background: none; border: none; border-bottom: 1px dashed var(--line);
+  padding: 12px 2px; font-size: 1rem; color: var(--ink); text-align: left;
+  font-family: var(--font);
+}
+.adm-pay-row:last-child { border-bottom: none; }
+.adm-pay-row .pname { font-weight: 800; }
+.adm-pay-row .pnet { font-weight: 900; color: var(--accent-deep); white-space: nowrap; font-size: 1.12rem; }
+.adm-pay-sub { font-size: .82rem; color: var(--ink-sub); }
+/* シフト確定・編集 */
+.adm-edit-staff { border-bottom: 2px dashed var(--line); padding: 12px 0; }
+.adm-edit-staff:last-child { border-bottom: none; }
+.adm-edit-name { font-weight: 900; font-size: 1.05rem; margin-bottom: 6px; }
+.adm-shift-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; }
+.adm-shift-row input[type="text"] {
+  width: 78px; padding: 10px 8px; font-size: 1rem;
+  border: 2px solid var(--line); border-radius: 12px;
+  font-family: var(--font); color: var(--ink); background: #fff;
+}
+.adm-shift-row select {
+  padding: 10px 6px; font-size: 1rem; border: 2px solid var(--line);
+  border-radius: 12px; background: #fff; font-family: var(--font); color: var(--ink);
+}
+.btn-mini {
+  border-radius: 12px; padding: 10px 12px; font-size: .92rem; font-weight: 800;
+  border: 2px solid var(--line); background: var(--card); color: var(--ink);
+  font-family: var(--font);
+}
+.btn-mini:active { transform: scale(.96); }
+.btn-mini.accent { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-deep); }
+.btn-mini.danger { background: #FDECEC; border-color: #E5A3A3; color: #A12B2B; }
+
 /* ---------- ログイン ---------- */
 #view-login {
   max-width: none; padding: 0;
