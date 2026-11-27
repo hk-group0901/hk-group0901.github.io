@@ -1,0 +1,98 @@
+/* ============================================================
+   1ヶ月分シフト表（印刷ビュー）スタイル
+   店に貼り出す紙と同じレイアウト：縦=日付 / 横=スタッフ名
+   ============================================================ */
+:root {
+  --ink: #222;
+  --line: #999;
+  --line-light: #ccc;
+  --accent: #D94036;
+  --font: "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 24px; background: #F3EDE6; color: var(--ink);
+  font-family: var(--font); font-size: 15px; line-height: 1.5;
+}
+
+/* ---------- 画面操作エリア（印刷には出ない） ---------- */
+.print-controls {
+  max-width: 1100px; margin: 0 auto 18px; background: #fff;
+  border: 2px solid #F0DFCE; border-radius: 16px; padding: 16px 18px;
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+}
+.print-controls label { font-weight: 800; }
+.print-controls input[type="month"] {
+  font-size: 1.05rem; padding: 10px; border: 2px solid #F0DFCE;
+  border-radius: 10px; font-family: var(--font);
+}
+.print-controls .btn-print {
+  background: var(--accent); color: #fff; border: none; border-radius: 12px;
+  padding: 12px 26px; font-size: 1.1rem; font-weight: 800; cursor: pointer;
+}
+.print-controls .btn-back {
+  background: #fff; color: var(--ink); border: 2px solid #F0DFCE;
+  border-radius: 12px; padding: 11px 18px; font-size: 1rem; font-weight: 700;
+  text-decoration: none;
+}
+.print-controls .check { display: flex; align-items: center; gap: 6px; font-weight: 700; }
+.print-controls .note { width: 100%; color: #6B5A52; font-size: .88rem; }
+
+/* ---------- シフト表本体 ---------- */
+.sheet {
+  max-width: 1100px; margin: 0 auto; background: #fff;
+  padding: 28px 30px; box-shadow: 0 2px 10px rgba(0,0,0,.08);
+}
+.sheet-head {
+  display: flex; justify-content: space-between; align-items: flex-end;
+  border-bottom: 3px solid var(--ink); padding-bottom: 8px; margin-bottom: 12px;
+}
+.sheet-title { font-size: 1.45rem; font-weight: 900; }
+.sheet-company { font-size: .92rem; font-weight: 700; text-align: right; white-space: nowrap; }
+
+table.shift-matrix { border-collapse: collapse; width: 100%; table-layout: fixed; }
+table.shift-matrix th, table.shift-matrix td {
+  border: 1px solid var(--line); padding: 4px 3px; text-align: center;
+  font-size: .8rem; vertical-align: middle; word-break: break-all;
+}
+table.shift-matrix thead th {
+  background: #F7F2EC; font-weight: 800; font-size: .82rem; padding: 7px 3px;
+}
+table.shift-matrix th.date-col, table.shift-matrix td.date-col {
+  width: 74px; font-weight: 800; background: #F7F2EC; white-space: nowrap;
+}
+table.shift-matrix td.date-col .dow { font-weight: 700; }
+td.date-col.sun, th.sun { color: var(--accent); }
+td.date-col.sat, th.sat { color: #3E7CB1; }
+table.shift-matrix tr.closed td { background: #F1ECE6; color: #8A7A70; }
+table.shift-matrix tr.closed td.cell { font-size: .75rem; letter-spacing: .3em; }
+table.shift-matrix td.cell { font-weight: 700; }
+table.shift-matrix td.cell .sub { display: block; font-size: .68rem; font-weight: 600; color: #555; }
+.sheet-foot { margin-top: 10px; font-size: .8rem; color: #555; }
+
+/* ============================================================
+   印刷用スタイル（A4）
+   - 横向き（スタッフ12名の横軸を収めるため）
+   - 見出し行は各ページで繰り返し
+   - 2ページ分割モード: 前半/後半の表の境目で改ページ
+   ============================================================ */
+@page { size: A4 landscape; margin: 9mm; }
+
+@media print {
+  body { background: #fff; padding: 0; }
+  .print-controls { display: none !important; }
+  .sheet { box-shadow: none; max-width: none; padding: 0; }
+  .sheet-head { border-bottom-width: 2px; }
+  table.shift-matrix th, table.shift-matrix td {
+    border-color: #666; font-size: 8.2pt; padding: 2.6pt 2pt;
+  }
+  table.shift-matrix thead { display: table-header-group; } /* 各ページで見出し繰り返し */
+  table.shift-matrix tr { page-break-inside: avoid; }
+  table.shift-matrix th.date-col, table.shift-matrix td.date-col { width: 52pt; }
+  .sheet-title { font-size: 15pt; }
+  .sheet-company { font-size: 9.5pt; }
+  .sheet-foot { font-size: 8pt; }
+
+  /* 2ページ分割：2つ目の表（後半）の前で改ページし、タイトルも繰り返す */
+  .sheet.page-split .sheet-block + .sheet-block { page-break-before: always; }
+}

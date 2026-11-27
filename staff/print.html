@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>シフト表（印刷用）｜辛麺屋 物語 スタッフアプリ</title>
+<link rel="stylesheet" href="print.css">
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<div class="print-controls">
+  <label for="print-month">表示する月</label>
+  <input type="month" id="print-month">
+  <label class="check">
+    <input type="checkbox" id="split-pages"> 2ページに分ける（前半・後半）
+  </label>
+  <button class="btn-print" id="btn-do-print">印刷する</button>
+  <a class="btn-back" href="index.html">アプリに戻る</a>
+  <div class="note">
+    印刷設定は「A4・横向き」がおすすめです。1枚に収まりにくい月は「2ページに分ける」をONにしてください。
+    <span id="print-mode-note"></span>
+  </div>
+</div>
+
+<main id="sheet-root"></main>
+
+<script src="print.js"></script>
+</body>
+</html>
