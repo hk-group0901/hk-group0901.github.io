@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>辛麺屋 物語 給与アプリ</title>
+<meta name="description" content="辛麺屋 物語の給与計算・明細・税理士送付アプリ（管理者専用）">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#DE3E6E">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="stylesheet" href="styles.css">
+<script src="config.js"></script>
+<!-- Supabase JS クライアント (CDN) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<!-- ============ ログイン ============ -->
+<section id="view-login" class="view active">
+  <div class="login-wrap">
+    <div style="text-align:center">
+      <img src="icons/icon-192.png" alt="" width="92" height="92" style="border-radius:24px">
+      <div class="login-title">辛麺屋 物語</div>
+      <div class="login-sub">給与アプリ（管理者専用）<br>おつかれさまです！ログインしてね</div>
+      <div id="demo-badge" class="demo-badge" style="display:none">デモモードで動いています</div>
+    </div>
+    <form id="login-form" style="margin-top:20px">
+      <div class="field" id="field-demo-staff">
+        <label for="login-staff">あなたのお名前</label>
+        <select id="login-staff"></select>
+      </div>
+      <div class="field" id="field-email" style="display:none">
+        <label for="login-email">メールアドレス</label>
+        <input id="login-email" type="email" autocomplete="username" placeholder="you@example.jp">
+      </div>
+      <div class="field">
+        <label for="login-password">パスワード</label>
+        <input id="login-password" type="password" autocomplete="current-password" placeholder="パスワード">
+      </div>
+      <button class="btn-primary" type="submit">ログインする</button>
+      <p class="hint" style="text-align:center;margin-top:12px">
+        スタッフ用アプリと同じID・パスワードでログインできます。<br>
+        このアプリは管理者（神坂さん）専用です。
+      </p>
+    </form>
+    <button class="btn-ghost" id="btn-demo-mode" type="button">アカウント発行前はこちら（デモで試す）</button>
+  </div>
+</section>
+
+<!-- ============ 管理者専用（ブロック） ============ -->
+<section id="view-blocked" class="view" style="display:none">
+  <div class="blocked-wrap">
+    <img src="icons/icon-192.png" alt="" width="76" height="76" style="border-radius:20px">
+    <div class="blocked-title">管理者専用です</div>
+    <p class="hint" id="blocked-msg">このアプリは管理者（神坂さん）だけが使えます。</p>
+    <button class="btn-primary" id="btn-blocked-logout" type="button">ログアウトしてログイン画面へ</button>
+  </div>
+</section>
+
+<!-- ============ アプリ本体 ============ -->
+<div id="app-shell" style="display:none">
+  <header class="app-header">
+    <div class="shop-name">辛麺屋 物語 -monogatari- 中町本店</div>
+    <div class="hello" id="hello-name">こんにちは</div>
+    <div class="today" id="hello-date"></div>
+  </header>
+
+  <section id="view-main" class="view active">
+    <div class="cal-head">
+      <button class="btn-nav" id="pay-prev" aria-label="前の月">‹</button>
+      <div class="month-title" id="pay-month-title"></div>
+      <button class="btn-nav" id="pay-next" aria-label="次の月">›</button>
+    </div>
+
+    <!-- ノルマ状況（山口・沼口） -->
+    <div class="card quota-card" id="quota-card" style="display:none">
+      <h2>ノルマの状況（山口・沼口）</h2>
+      <div id="quota-body"></div>
+    </div>
+
+    <!-- 給与一覧 -->
+    <div class="card">
+      <h2>給与一覧</h2>
+      <div id="pay-list"></div>
+      <div class="pay-totals" id="pay-totals"></div>
+      <p class="hint" style="margin-top:10px">スタッフの行をタップすると、その人の明細と調整項目の入力ができます。金額は自動計算（概算）です。</p>
+    </div>
+
+    <!-- 個人明細＋調整項目 -->
+    <div id="pay-detail"></div>
+
+    <!-- 税理士送付用の一括出力 -->
+    <div class="card">
+      <h2>税理士送付用の一括出力</h2>
+      <div class="pay-actions" style="margin-top:0">
+        <button class="btn-share" id="btn-csv" type="button">税理士用CSVを出す</button>
+        <button class="btn-share alt" id="btn-copy-all" type="button">全員分をコピー</button>
+      </div>
+      <button class="btn-ghost" id="btn-share-all" type="button">全員分を共有する</button>
+      <p class="hint">表示中の月の全員分を、明細と同じ様式でまとめて出します。</p>
+    </div>
+
+    <!-- 月の売上 -->
+    <div class="card">
+      <h2>月の売上（ノルマ判定用）</h2>
+      <p class="hint">今の登録値：<span id="sales-current">―</span></p>
+      <div class="field">
+        <label for="sales-input">その月の辛麺屋の売上（円）</label>
+        <input id="sales-input" type="number" inputmode="numeric" min="0" step="1" placeholder="例：3050000">
+      </div>
+      <button class="btn-primary" id="btn-sales-save" type="button">売上を登録する</button>
+    </div>
+
+    <div class="logout-row"><button id="btn-logout" type="button">ログアウト</button></div>
+  </section>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
