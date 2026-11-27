@@ -492,6 +492,8 @@ document.querySelectorAll("#app-shell .view").forEach((v) => v.classList.remove(
 $("view-" + name).classList.add("active");
 document.querySelectorAll("#bottom-nav button").forEach((b) =>
 b.classList.toggle("active", b.dataset.view === name));
+// 管理者ホーム（admin の打刻タブ）表示中だけ、ページ全体をダークテーマにする
+document.body.classList.toggle("admin-dark", name === "clock" && IS_ADMIN());
 if (name === "clock") renderClock();
 if (name === "request") renderRequest();
 if (name === "schedule") renderSchedule();
@@ -976,6 +978,7 @@ if (!adminClockTimer) adminClockTimer = setInterval(tickAdminClock, 1000);
 
 async function renderAdminHome(records) {
 // 管理者ホームを表示し、通常スタッフ向けのカード群を隠す
+document.body.classList.add("admin-dark"); // 管理者ホーム表示中はダークテーマ
 $("admin-home").style.display = "block";
 $("today-shift-card").style.display = "none";
 $("quota-card").style.display = "none";
@@ -991,7 +994,7 @@ const salaryIds = new Set(STAFF.filter((s) => s.pay_type === "salary").map((s) =
 const working = records.filter((r) =>!salaryIds.has(r.staff_id)
 && (currentStatus(r) === "working" || currentStatus(r) === "break"));
 $("ah-summary").innerHTML =
-`勤務中 <b>${working.length}名</b> ／ 本日のシフト <b>${todayShifts.length}件</b>`;
+`勤務中 <b>${working.length}名</b> / 本日のシフト ${todayShifts.length}件`;
 $("ah-working-count").textContent = `${working.length}名`;
 $("ah-working").innerHTML = working
 .map((r) => `<span class="working-chip${currentStatus(r) === "break"? " break": ""}">${esc(staffName(r.staff_id))}${currentStatus(r) === "break"? "（休憩中）": ""}</span>`)
@@ -1029,7 +1032,7 @@ let adminTargetId = null; // 管理者ホームで選択中のスタッフ
 function renderAdminBoard(records) {
 const grid = $("ah-grid");
 grid.innerHTML = "";
-const stateLabel = { off: "未出勤", working: "出勤中", break: "休憩中", done: "退勤ずみ"};
+const stateLabel = { off: "まだ出勤していません", working: "出勤中", break: "休憩中", done: "退勤ずみ"};
 // 社員（月給制）は打刻不要のため、名前一覧に出さない（kiosk と同じ）
 STAFF.filter((s) => s.pay_type!== "salary").forEach((s) => {
 const rec = records.find((a) => a.staff_id === s.id);

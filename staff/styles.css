@@ -138,20 +138,99 @@ h1, h2, h3 { line-height: 1.35; }
 .kiosk-name.is-done { opacity: .55; }
 
 /* ---------- 管理者ホーム（admin の打刻タブ） ---------- */
-.ah-clock-card {
-  text-align: center; border-color: var(--accent);
-  background: linear-gradient(135deg, #FFFFFF, var(--accent-soft));
+/* 管理者用アプリの管理者ホームと見た目を揃えたダークテーマ。
+   #admin-home 配下と、body.admin-dark（管理者ホーム表示中だけ付く）の
+   スコープだけで効かせ、通常スタッフ・kiosk・他タブのピンク基調には
+   影響させない。色はスクリーンショット基準：
+   背景＝ほぼ黒のチャコール／カード＝一段明るいダークプラム／
+   文字＝白、補助＝グレーモーブ、アクセント＝明るいローズピンク。 */
+body.admin-dark { background: #181114; }
+body.admin-dark .app-header {
+  background: #231A21; box-shadow: none;
+  border-radius: 0 0 28px 28px;
 }
-.ah-date { font-size: 1.05rem; font-weight: 800; color: var(--ink-sub); }
+body.admin-dark .bottom-nav {
+  background: rgba(24, 17, 20, .97); border-top-color: #392B34;
+}
+body.admin-dark .bottom-nav button { color: #9C8692; }
+body.admin-dark .bottom-nav button.active {
+  color: #FF7BA3; background: rgba(240, 86, 127, .16);
+}
+body.admin-dark .logout-row button { color: #9C8692; }
+
+#admin-home .card {
+  background: #2B2129; color: #fff;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 28px; padding: 24px 20px;
+  box-shadow: none;
+}
+#admin-home .card h2 { color: #fff; font-size: 1.32rem; margin-bottom: 12px; }
+#admin-home .hint { color: #9C8692; }
+
+/* 1枚目：時計カード */
+#admin-home .ah-clock-card { text-align: center; }
+.ah-date { font-size: 1rem; font-weight: 700; color: #B3A0AA; }
 .ah-clock {
-  font-size: 3.1rem; font-weight: 900; line-height: 1.15;
-  color: var(--accent-deep); letter-spacing: .02em;
+  font-size: clamp(3.2rem, 16.5vw, 4.8rem); font-weight: 900; line-height: 1.12;
+  color: #fff; letter-spacing: .01em; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
-.ah-greeting { font-size: 1.28rem; font-weight: 900; color: var(--accent); margin-top: 2px; }
-.ah-summary { margin-top: 10px; font-size: 1.05rem; font-weight: 700; }
-.ah-summary b { color: var(--accent-deep); font-size: 1.22rem; }
-.ah-working-count { color: var(--accent-deep); }
-.ah-notyet { margin-top: 12px; font-weight: 700; font-size: .98rem; }
+.ah-greeting {
+  font-size: 1.32rem; font-weight: 900; color: #F0567F;
+  margin-top: 6px; line-height: 1.55;
+}
+.ah-summary { margin-top: 14px; font-size: 1.08rem; font-weight: 700; color: #fff; }
+.ah-summary b { color: #F0567F; font-size: 1.18rem; }
+
+/* 2枚目：今、出勤中パネル */
+#admin-home .ah-now-card h2::before {
+  content: ""; display: inline-block; width: 11px; height: 11px;
+  border-radius: 50%; background: #6E5A64; margin-right: 10px;
+  vertical-align: 3px;
+}
+.ah-working-count { color: #F0567F; }
+#admin-home .working-chip {
+  background: rgba(240, 86, 127, .14); border: 2px solid #F0567F; color: #fff;
+  box-shadow: 0 0 0 0 rgba(240, 86, 127, .45);
+  animation: ah-glow 1.8s infinite;
+}
+#admin-home .working-chip.break {
+  background: rgba(245, 154, 78, .15); border-color: var(--peach);
+  color: #FFD9AE; animation: none; box-shadow: none;
+}
+@keyframes ah-glow {
+  0%   { box-shadow: 0 0 0 0 rgba(240, 86, 127, .45); }
+  70%  { box-shadow: 0 0 0 12px rgba(240, 86, 127, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(240, 86, 127, 0); }
+}
+.ah-notyet {
+  margin-top: 16px; padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, .12);
+  color: #C4B0BA; font-weight: 600; font-size: 1rem; line-height: 1.7;
+}
+.ah-notyet:empty { display: none; }
+
+/* 3枚目：打刻ボード（縦リスト。名前＝大きく白、状態＝グレーで添える） */
+#admin-home .kiosk-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+#admin-home .kiosk-name {
+  flex-direction: row; align-items: baseline; justify-content: flex-start;
+  flex-wrap: wrap; gap: 6px 14px; text-align: left;
+  background: #231A21; border: 2px solid rgba(255, 255, 255, .10);
+  border-radius: 20px; padding: 18px 16px;
+}
+#admin-home .kiosk-name .k-name { font-size: 1.5rem; font-weight: 900; color: #fff; }
+#admin-home .kiosk-name .k-state { font-size: 1rem; font-weight: 600; color: #9C8692; }
+#admin-home .kiosk-name.selected {
+  border-color: #F0567F; box-shadow: 0 0 0 3px rgba(240, 86, 127, .25);
+}
+#admin-home .kiosk-name.is-working {
+  background: #2B2129; border-color: #F0567F; animation: ah-glow 1.8s infinite;
+}
+#admin-home .kiosk-name.is-working .k-state { color: #F0567F; }
+#admin-home .kiosk-name.is-break { background: #2B2129; border-color: var(--peach); }
+#admin-home .kiosk-name.is-break .k-state { color: var(--peach); }
+#admin-home .kiosk-name.is-done { opacity: .5; }
+#admin-home .clock-status { color: #fff; }
 
 /* ---------- ノルマ進捗カード ---------- */
 .quota-card { border-color: var(--peach); background: linear-gradient(135deg, #FFFDF8, var(--peach-soft)); }
