@@ -1298,6 +1298,21 @@ $("pay-net").textContent = fmtYen(p.net);
 const payDate = new Date(y, m + 1, PR.payDay);
 $("pay-date-note").textContent = `支払予定日：${payDate.getMonth() + 1}月${PR.payDay}日`;
 const row = (label, val) => `<tr><td>${esc(label)}</td><td class="num">${esc(val)}</td></tr>`;
+// 社員（月給制）は明細内訳を見せず、辛麺屋の出勤手当だけを表示する。
+// 給与はドリンクバック等で変わり確定はBAR側のため、このアプリ（辛麺屋専用）
+// では出勤日数と手当だけを出す（2026-11-28決定）。計算自体は従来どおり。
+const salaryView = ME.pay_type === "salary";
+$("pay-slip-area").style.display = salaryView? "none": "";
+$("pay-cross-area").style.display = salaryView? "": "none";
+if (salaryView) {
+$("pay-cross-amount").textContent = fmtYen(p.crossPay);
+$("pay-cross-formula").textContent = `${fmtYen(p.crossRate)} × ${p.crossDays}日分`;
+$("pay-cross-table").innerHTML =
+row("出勤日数", `${p.crossDays}日`) +
+row("出勤手当（単価）", fmtYen(p.crossRate)) +
+`<tr class="total"><td>出勤手当 合計</td><td class="num">${fmtYen(p.crossPay)}</td></tr>`;
+return;
+}
 $("pay-attendance").innerHTML =
 row("労働期間", p.period) + row("労働日数", `${p.days}日`) +
 row("労働時間", fmtHM(p.workMin)) + row("所定時間外労働", fmtHM(p.otMin));

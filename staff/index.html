@@ -198,6 +198,7 @@
       <button class="btn-nav" id="pay-next" aria-label="次の月">›</button>
     </div>
 
+    <div id="pay-slip-area">
     <div class="card" style="text-align:center">
       <div style="font-size:1.25rem;font-weight:900" id="pay-slip-title">給料支払明細書</div>
       <div style="font-size:1.1rem;font-weight:800;margin-top:4px"><span id="pay-staff-name"></span> 殿</div>
@@ -237,6 +238,25 @@
         違っていたら神坂さんに教えてね。
       </p>
       <p class="hint" style="text-align:center;margin-top:6px">株式会社H&Kグループ</p>
+    </div>
+    </div>
+
+    <!-- 社員（月給制）向け：明細内訳は出さず、辛麺屋の出勤手当だけを表示 -->
+    <div id="pay-cross-area" style="display:none">
+      <div class="pay-hero">
+        <div class="label">出勤手当（所定時間外賃金）</div>
+        <div class="amount" id="pay-cross-amount">¥0</div>
+        <div class="hint" id="pay-cross-formula"></div>
+      </div>
+      <div class="card">
+        <h2>辛麺屋の出勤</h2>
+        <table class="pay-table" id="pay-cross-table"></table>
+        <p class="hint" style="margin-top:10px">
+          社員の給与明細は、別途お渡ししますね。<br>
+          このアプリでは、辛麺屋に出勤した日数と出勤手当だけをお知らせしています。
+        </p>
+        <p class="hint" style="text-align:center;margin-top:6px">株式会社H&Kグループ</p>
+      </div>
     </div>
   </section>
 
