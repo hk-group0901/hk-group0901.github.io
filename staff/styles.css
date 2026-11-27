@@ -271,3 +271,63 @@ h1, h2, h3 { line-height: 1.35; }
 
 .logout-row { text-align: center; margin-top: 6px; }
 .logout-row button { background: none; border: none; color: var(--ink-sub); font-size: .92rem; text-decoration: underline; padding: 10px; }
+
+/* ---------- フォームの結果メッセージ ---------- */
+.form-msg { min-height: 1.4em; font-size: .98rem; font-weight: 700; margin: 4px 0 10px; }
+.form-msg.ok  { color: var(--green); }
+.form-msg.err { color: var(--accent); }
+.btn-primary:disabled { opacity: .45; box-shadow: none; }
+
+/* ---------- 設定：ロックのトグル ---------- */
+.lock-toggle-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; margin: 14px 0 6px;
+}
+.lock-toggle-label { font-size: 1.05rem; font-weight: 800; }
+.switch { position: relative; display: inline-block; width: 64px; height: 38px; flex: none; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch .slider {
+  position: absolute; inset: 0; border-radius: 999px;
+  background: #D8C9BB; transition: .25s; cursor: pointer;
+}
+.switch .slider::before {
+  content: ""; position: absolute; left: 4px; top: 4px;
+  width: 30px; height: 30px; border-radius: 50%;
+  background: #fff; transition: .25s; box-shadow: 0 2px 6px rgba(0,0,0,.25);
+}
+.switch input:checked + .slider { background: var(--green); }
+.switch input:checked + .slider::before { transform: translateX(26px); }
+
+/* ---------- ロック画面 ---------- */
+#lock-screen {
+  position: fixed; inset: 0; z-index: 200;
+  background: var(--bg); overflow-y: auto;
+  padding: calc(28px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));
+}
+.lock-wrap { max-width: 420px; margin: 0 auto; text-align: center; }
+.lock-title { font-size: 1.45rem; font-weight: 900; margin-top: 10px; }
+.lock-name { font-size: 1.05rem; font-weight: 700; color: var(--ink-sub); margin: 4px 0 18px; }
+.lock-msg { font-size: 1rem; font-weight: 700; margin: 16px 0 6px; min-height: 1.5em; }
+.lock-msg.err { color: var(--accent); }
+.pin-dots { display: flex; justify-content: center; gap: 16px; margin: 10px 0 20px; }
+.pin-dots span {
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 3px solid var(--ink-sub); background: transparent;
+}
+.pin-dots span.filled { background: var(--ink); border-color: var(--ink); }
+.pin-pad {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 12px; max-width: 320px; margin: 0 auto;
+}
+.pin-pad button {
+  height: 68px; border-radius: 20px; border: 2px solid var(--line);
+  background: var(--card); color: var(--ink);
+  font-size: 1.6rem; font-weight: 800;
+  box-shadow: 0 3px 8px rgba(0,0,0,.08);
+}
+.pin-pad button:active { transform: scale(.95); background: var(--accent-soft); }
+.pin-pad button.pin-del { font-size: 1.05rem; color: var(--ink-sub); }
+.lock-logout {
+  margin-top: 26px; background: none; border: none;
+  color: var(--ink-sub); font-size: .95rem; text-decoration: underline; padding: 12px;
+}

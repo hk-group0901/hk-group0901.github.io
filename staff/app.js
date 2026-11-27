@@ -303,6 +303,13 @@ const staffShort = (id) => (STAFF.find((s) => s.id === id) || {}).short || "";
 async function enterApp() {
 // 打刻用iPad（kiosk）は名簿表示から除く（自分の行は ME として保持）
 STAFF = (await DB.listStaff()).filter((s) => s.role!== "kiosk");
+// アプリのロック（Face ID／PIN）が有効な端末では、解除するまで中身を見せない。
+// 打刻用iPad（kiosk）にはロックを適用しない。
+if (!IS_KIOSK() && isLockEnabled() && !lockUnlocked) {
+$("view-login").classList.remove("active");
+$("view-login").style.display = "none";
+await requireUnlock();
+}
 $("view-login").classList.remove("active");
 $("view-login").style.display = "none";
 $("app-shell").style.display = "block";
@@ -377,11 +384,14 @@ if (ME) { await enterApp(); return true;}
 return false;
 }
 
-$("btn-logout").addEventListener("click", async () => {
+async function doLogout() {
 if (DEMO) localStorage.removeItem("karamenya_demo_session");
 else await sb.auth.signOut();
 location.reload();
-});
+}
+$("btn-logout").addEventListener("click", doLogout);
+$("btn-logout-2").addEventListener("click", doLogout);
+$("btn-lock-logout").addEventListener("click", doLogout);
 
 // ---------- 画面遷移 ----------
 function showView(name) {
@@ -395,10 +405,271 @@ if (name === "request") renderRequest();
 if (name === "schedule") renderSchedule();
 if (name === "pay") renderPay();
 if (name === "inbox") renderInbox();
+if (name === "settings") renderSettings();
 window.scrollTo(0, 0);
 }
 document.querySelectorAll("#bottom-nav button").forEach((b) =>
 b.addEventListener("click", () => showView(b.dataset.view)));
+
+// ============================================================
+// 設定（パスワード変更）
+// ============================================================
+async function renderSettings() {
+$("set-name").textContent = ME? ME.name: "";
+if (DEMO) {
+$("set-email").textContent = "デモモード（ログインIDなし）";
+$("pw-demo-note").style.display = "block";
+$("pw-new").disabled = true;
+$("pw-confirm").disabled = true;
+$("btn-change-pw").disabled = true;
+} else {
+$("pw-demo-note").style.display = "none";
+try {
+const { data } = await sb.auth.getUser();
+$("set-email").textContent = (data && data.user && data.user.email) || "";
+} catch (e) { $("set-email").textContent = ""; }
+}
+refreshLockUI();
+}
+
+$("btn-change-pw").addEventListener("click", async () => {
+const msg = $("pw-msg");
+const setMsg = (t, ok) => { msg.textContent = t; msg.className = "form-msg " + (ok? "ok": "err"); };
+if (DEMO) { setMsg("デモモードでは変更できません", false); return; }
+const p1 = $("pw-new").value, p2 = $("pw-confirm").value;
+if (p1.length < 6) { setMsg("パスワードは6文字以上にしてください", false); return; }
+if (p1!== p2) { setMsg("2つのパスワードが一致しません。もう一度確認してください", false); return; }
+$("btn-change-pw").disabled = true;
+const { error } = await sb.auth.updateUser({ password: p1 });
+$("btn-change-pw").disabled = false;
+if (error) { setMsg("変更できませんでした。少し時間をおいて、もう一度試してください", false); return; }
+$("pw-new").value = ""; $("pw-confirm").value = "";
+setMsg("パスワードを変更しました。次にログインするときから、新しいパスワードを使ってください", true);
+toast("パスワードを変更しました");
+});
+
+// ============================================================
+// アプリのロック（Face ID・指紋／PIN）
+// ------------------------------------------------------------
+// ・設定は端末ごと・スタッフごとに localStorage に保存する。
+// ・PIN は平文保存せず、ソルト付き SHA-256 ハッシュで保存する。
+// ・生体認証は WebAuthn のプラットフォーム認証を使う。サーバー側の
+//   署名検証は行わない「アプリ側のゲート」であり、Supabase の
+//   セッション自体は保持される（解除＝この端末で中身を見せる許可）。
+// ・打刻用iPad（role=kiosk）にはロックを適用しない。
+// ============================================================
+let lockUnlocked = false;   // この起動で解除済みか
+let lockOverlayOpen = false; // ロック画面を表示中か
+let lockHiddenAt = 0;        // バックグラウンドに入った時刻
+const LOCK_RELOCK_MS = 60 * 1000; // バックグラウンドから1分以上で再ロック
+
+const lockKey = (part) => `karamenya_lock_${ME? ME.id: "anon"}_${part}`;
+const isLockEnabled = () => localStorage.getItem(lockKey("enabled")) === "1";
+function setLockEnabled(on) {
+if (on) localStorage.setItem(lockKey("enabled"), "1");
+else localStorage.removeItem(lockKey("enabled"));
+}
+function getPinRecord() {
+try {
+const raw = localStorage.getItem(lockKey("pin"));
+return raw? JSON.parse(raw): null;
+} catch (e) { return null; }
+}
+const getCredId = () => localStorage.getItem(lockKey("cred"));
+
+// ---------- バイナリ <-> Base64 ----------
+const b64enc = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)));
+const b64dec = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+const b64urlEnc = (buf) => b64enc(new Uint8Array(buf)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const b64urlDec = (s) => { s = s.replace(/-/g, "+").replace(/_/g, "/"); while (s.length % 4) s += "="; return b64dec(s); };
+
+// ---------- PIN（ソルト付き SHA-256） ----------
+async function hashPin(pin, saltBytes) {
+const pinBytes = new TextEncoder().encode(pin);
+const buf = new Uint8Array(saltBytes.length + pinBytes.length);
+buf.set(saltBytes, 0); buf.set(pinBytes, saltBytes.length);
+return new Uint8Array(await crypto.subtle.digest("SHA-256", buf));
+}
+async function savePin(pin) {
+const salt = crypto.getRandomValues(new Uint8Array(16));
+const hash = await hashPin(pin, salt);
+localStorage.setItem(lockKey("pin"), JSON.stringify({ salt: b64enc(salt), hash: b64enc(hash) }));
+}
+async function verifyPin(pin) {
+const rec = getPinRecord();
+if (!rec) return false;
+const hash = await hashPin(pin, b64dec(rec.salt));
+return b64enc(hash) === rec.hash;
+}
+
+// ---------- WebAuthn（プラットフォーム認証：Face ID・指紋） ----------
+const waSupported = () => !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create && navigator.credentials.get);
+async function waRegister() {
+const cred = await navigator.credentials.create({ publicKey: {
+challenge: crypto.getRandomValues(new Uint8Array(32)),
+rp: { name: "辛麺屋 物語 スタッフアプリ", id: location.hostname },
+user: { id: new TextEncoder().encode(ME.id), name: ME.name, displayName: ME.name },
+pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "discouraged" },
+timeout: 60000
+}});
+if (!cred) throw new Error("credential not created");
+return b64urlEnc(cred.rawId);
+}
+async function waAuthenticate(credIdB64) {
+const res = await navigator.credentials.get({ publicKey: {
+challenge: crypto.getRandomValues(new Uint8Array(32)),
+rpId: location.hostname,
+allowCredentials: [{ type: "public-key", id: b64urlDec(credIdB64) }],
+userVerification: "required",
+timeout: 60000
+}});
+if (!res) throw new Error("assertion not obtained");
+return true;
+}
+
+// ---------- 設定画面：ロックまわり ----------
+function refreshLockUI() {
+const hasPin =!!getPinRecord();
+const enabled = isLockEnabled();
+$("lock-toggle").checked = enabled;
+$("lock-setup").style.display = "none";
+$("lock-manage").style.display = hasPin? "block": "none";
+const bioBtn = $("btn-bio-register");
+const bioOk = waSupported();
+bioBtn.style.display = bioOk? "block": "none";
+if (bioOk) {
+const registered =!!getCredId();
+$("bio-status").textContent = registered
+? "生体認証（Face ID・指紋）：登録済みです。ロック解除に使えます"
+: "生体認証（Face ID・指紋）：まだ登録していません";
+bioBtn.textContent = registered? "Face ID・指紋を登録し直す": "Face ID・指紋を登録する";
+} else {
+$("bio-status").textContent = "この端末・ブラウザでは生体認証が使えません（PINのみ）";
+}
+}
+$("lock-toggle").addEventListener("change", (e) => {
+if (e.target.checked) {
+if (getPinRecord()) {
+setLockEnabled(true);
+toast("アプリのロックをONにしました");
+refreshLockUI();
+} else {
+// PIN がまだ無い場合は、まず PIN を決めてもらう
+$("lock-manage").style.display = "none";
+$("lock-setup").style.display = "block";
+$("pin-msg").textContent = "まず、解除に使うPIN（数字4桁）を決めてください";
+$("pin-msg").className = "form-msg";
+}
+} else {
+setLockEnabled(false);
+toast("アプリのロックをOFFにしました");
+refreshLockUI();
+}
+});
+$("btn-change-pin").addEventListener("click", () => {
+$("pin-new").value = ""; $("pin-confirm").value = "";
+$("pin-msg").textContent = "";
+$("pin-msg").className = "form-msg";
+$("lock-setup").style.display = "block";
+});
+$("btn-save-pin").addEventListener("click", async () => {
+const msg = $("pin-msg");
+const setMsg = (t, ok) => { msg.textContent = t; msg.className = "form-msg " + (ok? "ok": "err"); };
+const p1 = $("pin-new").value.trim(), p2 = $("pin-confirm").value.trim();
+if (!/^\d{4}$/.test(p1)) { setMsg("PINは数字4桁で入力してください", false); return; }
+if (p1!== p2) { setMsg("2つのPINが一致しません。もう一度確認してください", false); return; }
+await savePin(p1);
+$("pin-new").value = ""; $("pin-confirm").value = "";
+// トグルの状態に合わせて有効化（PIN変更だけのときはON/OFFを変えない）
+setLockEnabled($("lock-toggle").checked);
+toast($("lock-toggle").checked? "PINを決めました。ロックがONになりました": "PINを変更しました");
+refreshLockUI();
+});
+$("btn-bio-register").addEventListener("click", async () => {
+if (!waSupported()) return;
+try {
+const credId = await waRegister();
+localStorage.setItem(lockKey("cred"), credId);
+toast("生体認証を登録しました");
+} catch (e) {
+toast("登録できませんでした。もう一度試してください");
+}
+refreshLockUI();
+});
+
+// ---------- ロック画面 ----------
+let pinBuffer = "";
+let unlockResolver = null;
+function renderPinDots() {
+document.querySelectorAll("#pin-dots span").forEach((s, i) =>
+s.classList.toggle("filled", i < pinBuffer.length));
+}
+function requireUnlock() {
+return new Promise((resolve) => {
+unlockResolver = resolve;
+lockOverlayOpen = true;
+pinBuffer = ""; renderPinDots();
+$("lock-name").textContent = ME? `${ME.name}さん、ロック中です`: "ロック中です";
+$("lock-msg").textContent = "PIN（数字4桁）を入力してください";
+$("lock-msg").className = "lock-msg";
+const canBio = waSupported() &&!!getCredId();
+$("btn-lock-bio").style.display = canBio? "block": "none";
+$("lock-screen").style.display = "block";
+document.body.style.overflow = "hidden";
+// 開いたら一度だけ生体認証を試す（失敗したらPIN入力に切り替わる）
+if (canBio) tryBioUnlock();
+});
+}
+function finishUnlock() {
+lockUnlocked = true;
+lockOverlayOpen = false;
+pinBuffer = ""; renderPinDots();
+$("lock-screen").style.display = "none";
+document.body.style.overflow = "";
+toast("ロックを解除しました");
+if (unlockResolver) { const r = unlockResolver; unlockResolver = null; r(); }
+}
+async function tryBioUnlock() {
+try {
+await waAuthenticate(getCredId());
+finishUnlock();
+} catch (e) {
+$("lock-msg").textContent = "生体認証ができませんでした。PINを入力してください";
+}
+}
+$("btn-lock-bio").addEventListener("click", tryBioUnlock);
+document.querySelectorAll("#pin-pad button").forEach((b) =>
+b.addEventListener("click", async () => {
+if (!lockOverlayOpen) return;
+const k = b.dataset.pin;
+if (k === "del") { pinBuffer = pinBuffer.slice(0, -1); renderPinDots(); return; }
+if (pinBuffer.length >= 4) return;
+pinBuffer += k;
+renderPinDots();
+if (pinBuffer.length === 4) {
+const entered = pinBuffer;
+if (await verifyPin(entered)) {
+finishUnlock();
+} else {
+if (navigator.vibrate) navigator.vibrate(200);
+$("lock-msg").textContent = "PINが違います。もう一度入力してください";
+$("lock-msg").className = "lock-msg err";
+pinBuffer = ""; renderPinDots();
+}
+}
+}));
+// バックグラウンドに一定時間いたら再ロックする
+document.addEventListener("visibilitychange", () => {
+if (document.hidden) { lockHiddenAt = Date.now(); return; }
+if (!ME || IS_KIOSK() || lockOverlayOpen || !isLockEnabled()) return;
+if ($("app-shell").style.display === "none") return;
+if (lockHiddenAt && Date.now() - lockHiddenAt >= LOCK_RELOCK_MS) {
+lockUnlocked = false;
+requireUnlock();
+}
+lockHiddenAt = 0;
+});
 
 // ============================================================
 // 打刻
