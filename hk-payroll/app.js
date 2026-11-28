@@ -455,6 +455,8 @@ period: `${y}年${m + 1}月1日〜${m + 1}月${new Date(y, m + 1, 0).getDate()}�
 // ============================================================
 let ME = null; // 自分の staff レコード
 let STAFF = []; // 全スタッフ（kiosk行は除く）
+// 神坂さん本人（代表）は給与アプリの従業員としては扱わない（本人の指示 2026-11-28）
+const isOwnerRow = (s) => !DEMO && ME && s.id === ME.id;
 
 // ---------- 画面切り替え（戻るボタンは前の画面へ） ----------
 let curView = "home";
@@ -480,7 +482,7 @@ document.querySelectorAll("[data-nav]").forEach((b) =>
 b.addEventListener("click", () => showMainView(b.dataset.nav)));
 
 async function enterApp() {
-STAFF = (await DB.listStaff()).filter((s) => s.role!== "kiosk");
+STAFF = (await DB.listStaff()).filter((s) => s.role!== "kiosk" && !isOwnerRow(s));
 if (!ME || ME.role!== "admin") { showBlocked(); return; }
 $("view-login").classList.remove("active");
 $("view-login").style.display = "none";
@@ -1520,7 +1522,7 @@ $("btn-hist-printall").addEventListener("click", printAllHistSlips);
 let allStaff = [];
 async function renderSettings() {
 if (DEMO) { $("staff-settings-list").innerHTML = `<p class="hint">デモモードでは使えません。</p>`; return; }
-allStaff = await DB.listAllStaff();
+allStaff = (await DB.listAllStaff()).filter((s) => !isOwnerRow(s));
 const setGroups = { kara: [], bar: [], other: [] };
 allStaff.forEach((s, i) => setGroups[shopGroup(s.shop_name || s.shop)].push([s, i]));
 $("staff-settings-list").innerHTML = ["kara", "bar", "other"].map((g) => {
@@ -1684,7 +1686,7 @@ if (mnErr) { toast("設定は保存しましたが、マイナンバーの保存
 if (window.__pendingImportId) { await DB.markImportUsed(window.__pendingImportId); window.__pendingImportId = null; }
 toast(`${s.name}さんの設定を保存しました`);
 $("staff-settings-form").innerHTML = "";
-STAFF = (await DB.listStaff()).filter((x) => x.role!== "kiosk");
+STAFF = (await DB.listStaff()).filter((x) => x.role!== "kiosk" && !isOwnerRow(x));
 await renderAll();
 await renderSettings();
 });
