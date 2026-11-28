@@ -1589,6 +1589,78 @@ period: `${y}年${m + 1}月1日〜${m + 1}月${new Date(y, m + 1, 0).getDate()}�
 };
 }
 
+// ---------- シフトからの給与予想（概算） ----------
+// 確定シフトの時間から、その月の手取りを概算する。時給・ノルマ判定・
+// 控除のルールは computePayroll（打刻ベースの本計算）と同じにしてある。
+async function computeShiftEstimate(staff, y, m) {
+const t2m = (t) => { const [h, mm] = t.split(":").map(Number); return h * 60 + mm; };
+const shifts = (await DB.listShifts(y, m)).filter((s) => s.staff_id === staff.id);
+let workMin = 0, nightMin = 0, otMin = 0;
+const perDay = new Map();
+shifts.forEach((s) => {
+const st = t2m(s.start_time || BAND[s.band].start);
+const en = t2m(s.end_time || BAND[s.band].end);
+if (en <= st) return;
+workMin += en - st;
+// 深夜帯は 22:00〜29:00（翌5:00）との重なりで数える
+nightMin += Math.max(0, Math.min(en, 1740) - Math.max(st, 1320));
+perDay.set(s.date, (perDay.get(s.date) || 0) + (en - st));
+});
+perDay.forEach((mins) => { otMin += Math.max(0, mins - 480); });
+const days = perDay.size;
+let wage = staff.hourly_wage || PR.defaultHourlyWage;
+let nightIncluded =!!staff.night_included;
+let quotaState = null;
+const monthSales = await DB.getMonthlySales(y, m);
+if (staff.quota_wage) {
+if (monthSales == null) quotaState = "unknown";
+else if (monthSales > (staff.quota_threshold || 3000000)) {
+wage = staff.quota_wage; nightIncluded = true; quotaState = "achieved";
+} else quotaState = "missed";
+}
+const siEnrolled = staff.social_insurance != null? !!staff.social_insurance: !!staff.social_insurance_enrolled;
+const calcNet = (w, ni) => {
+const basePay = Math.round((workMin / 60) * w);
+const nightPay = ni? 0: Math.round((nightMin / 60) * w * PR.nightPremiumRate);
+const otPremium = Math.round((otMin / 60) * w * PR.overtimePremiumRate);
+const gross = basePay + nightPay + otPremium
++ (staff.position_allowance || 0) + (staff.deemed_overtime || 0)
++ (staff.transport_allowance || 0) + (staff.drink_back || 0)
++ (staff.other_allowances || []).reduce((a, o) => a + o.amount, 0);
+const health = siEnrolled? Math.round(gross * PR.healthInsuranceRate): 0;
+const pension = siEnrolled? Math.round(gross * PR.pensionRate): 0;
+const child = siEnrolled? Math.round(gross * PR.childSupportRate): 0;
+const emp = Math.round(gross * PR.employmentInsuranceRate);
+const tax = estimateIncomeTax(gross, health + pension + child + emp, staff.dependents || 0);
+const ded = health + pension + child + emp + tax
++ (staff.advance_payment || 0) + (staff.resident_tax || 0);
+return { gross, net: gross - ded };
+};
+const main = calcNet(wage, nightIncluded);
+const altNet = quotaState === "unknown"? calcNet(staff.quota_wage, true).net: null;
+return { days, workMin, nightMin, wage, nightIncluded, quotaState,
+gross: main.gross, net: main.net, altNet, shiftCount: shifts.length };
+}
+async function renderShiftEstimate(y, m) {
+const card = $("pay-estimate-card");
+// 社員（月給制）は下の出勤手当表示が実質の予想になるため、カードは出さない。
+if (ME.pay_type === "salary") { card.style.display = "none"; return; }
+const e = await computeShiftEstimate(ME, y, m);
+if (!e.shiftCount) { card.style.display = "none"; return; }
+card.style.display = "";
+$("pay-est-net").textContent = fmtYen(e.net);
+$("pay-est-table").innerHTML =
+`<tr><td>出勤日数（確定シフト）</td><td class="num">${e.days}日</td></tr>` +
+`<tr><td>労働時間</td><td class="num">${fmtHM(e.workMin)}（深夜 ${fmtHM(e.nightMin)}）</td></tr>` +
+`<tr><td>支給合計の予想</td><td class="num">${fmtYen(e.gross)}</td></tr>` +
+`<tr><td>時給</td><td class="num">${fmtYen(e.wage)}${e.nightIncluded? "（深夜手当込み）": ""}</td></tr>`;
+const notes = ["確定シフトから計算した概算です。実際の金額は、打刻の記録や締め日の確定内容で変わります。"];
+if (e.quotaState === "unknown") notes.push(`今月の売上が未確定のため通常時給で計算しています。ノルマ達成の場合は、手取り予想が約${fmtYen(e.altNet)}になります。`);
+else if (e.quotaState === "achieved") notes.push("今月はノルマ達成の時給で計算しています。");
+else if (e.quotaState === "missed") notes.push("今月の売上はノルマ未達のため、通常時給＋深夜割増で計算しています。");
+$("pay-est-note").textContent = notes.join(" ");
+}
+
 const payState = { y: new Date().getFullYear(), m: new Date().getMonth()};
 let lastPayroll = null;
 async function renderPay() {
@@ -1598,6 +1670,7 @@ $("pay-slip-title").textContent = `給料支払明細書（${y}年${m + 1}月分
 $("pay-staff-name").textContent = ME.name;
 const p = await computePayroll(ME, y, m);
 lastPayroll = p;
+await renderShiftEstimate(y, m);
 $("pay-net").textContent = fmtYen(p.net);
 const payDate = new Date(y, m + 1, PR.payDay);
 $("pay-date-note").textContent = `支払予定日：${payDate.getMonth() + 1}月${PR.payDay}日`;
@@ -1796,6 +1869,16 @@ refreshInboxBadge();
 // ============================================================
 // Push通知の購読
 // ============================================================
+/** 購読に使われているサーバー鍵が、現在の設定の鍵と一致するか */
+function subKeyMatches(sub) {
+try {
+const cur = sub && sub.options && sub.options.applicationServerKey;
+if (!cur || !CFG.VAPID_PUBLIC_KEY) return true;
+const b64 = btoa(String.fromCharCode(...new Uint8Array(cur)))
+.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+return b64 === CFG.VAPID_PUBLIC_KEY;
+} catch (e) { return true; }
+}
 function urlBase64ToUint8Array(base64) {
 const padding = "=".repeat((4 - (base64.length % 4)) % 4);
 const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -1829,6 +1912,11 @@ return;
 }
 const reg = await navigator.serviceWorker.ready;
 let sub = await reg.pushManager.getSubscription();
+// サーバー側の鍵が差し替わっていたら、古い購読は使えないので破棄する。
+if (sub && !subKeyMatches(sub)) {
+try { await sub.unsubscribe(); } catch (e) {}
+sub = null;
+}
 // 許可済みなのに購読が無い（端末変更・購読の失効など）場合は、黙って取り直す。
 if (!sub && Notification.permission === "granted" && CFG.VAPID_PUBLIC_KEY) {
 try {
@@ -1848,6 +1936,10 @@ const perm = await Notification.requestPermission();
 if (perm!== "granted") { toast("通知が許可されませんでした"); return;}
 const reg = await navigator.serviceWorker.ready;
 let sub = await reg.pushManager.getSubscription();
+if (sub && !subKeyMatches(sub)) {
+try { await sub.unsubscribe(); } catch (e) {}
+sub = null;
+}
 if (!sub && CFG.VAPID_PUBLIC_KEY) {
 sub = await reg.pushManager.subscribe({
 userVisibleOnly: true,

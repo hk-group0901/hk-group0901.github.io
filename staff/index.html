@@ -234,6 +234,16 @@
       <button class="btn-nav" id="pay-next" aria-label="次の月">›</button>
     </div>
 
+    <div class="card" id="pay-estimate-card" style="display:none">
+      <h2>シフトからの給与予想（概算）</h2>
+      <div style="text-align:center;padding:6px 0 2px">
+        <div class="hint">手取りの予想</div>
+        <div style="font-size:1.7rem;font-weight:900" id="pay-est-net">¥0</div>
+      </div>
+      <table class="pay-table" id="pay-est-table"></table>
+      <div class="hint" id="pay-est-note" style="margin-top:8px"></div>
+    </div>
+
     <div id="pay-slip-area">
     <div class="card" style="text-align:center">
       <div style="font-size:1.25rem;font-weight:900" id="pay-slip-title">給料支払明細書</div>
