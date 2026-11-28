@@ -1317,6 +1317,15 @@ if (g === "bar") { o.barGross = (o.barGross || 0) + r.gross; o.barNet = (o.barNe
 });
 return byMonth;
 }
+function yearHeads(items, yearOf, rowHtml) {
+let out = "", last = "";
+items.forEach((it) => {
+const y = yearOf(it);
+if (y !== last) { out += `<h4 class="year-label">${y}年</h4>`; last = y; }
+out += rowHtml(it);
+});
+return out;
+}
 function renderMonths() {
 const now = new Date();
 const endY = now.getFullYear(), endM = now.getMonth() + 1; // 来月まで
@@ -1327,10 +1336,10 @@ calc.push([y, m]);
 m++; if (m > 11) { m = 0; y++; }
 }
 calc.reverse();
-$("months-calc").innerHTML = calc.map(([yy, mm]) =>
+$("months-calc").innerHTML = yearHeads(calc, (c) => String(c[0]), ([yy, mm]) =>
 `<button type="button" class="folder-row" data-calc-y="${yy}" data-calc-m="${mm}">
 <span class="folder-ico">▸</span><span class="folder-name">${yy}年${mm + 1}月分</span>
-<span class="folder-sub">計算</span><span class="menu-arrow">›</span></button>`).join("");
+<span class="folder-sub">計算</span><span class="menu-arrow">›</span></button>`);
 $("months-calc").querySelectorAll("[data-calc-y]").forEach((b) =>
 b.addEventListener("click", async () => {
 view.y = Number(b.dataset.calcY); view.m = Number(b.dataset.calcM);
@@ -1339,12 +1348,12 @@ showMainView("payroll");
 }));
 const byMonth = histByMonth();
 const keys = [...byMonth.keys()].sort().reverse();
-$("months-done").innerHTML = keys.map((k) => {
+$("months-done").innerHTML = keys.length? yearHeads(keys, (k) => k.slice(0, 4), (k) => {
 const o = byMonth.get(k);
 return `<button type="button" class="folder-row" data-done-k="${k}">
 <span class="folder-ico">▸</span><span class="folder-name">${k.slice(0, 4)}年${Number(k.slice(5, 7))}月分</span>
 <span class="folder-sub">${o.count}件／差引 ${fmtYen(o.net)}</span><span class="menu-arrow">›</span></button>`;
-}).join("") || `<p class="hint">まだありません。</p>`;
+}): `<p class="hint">まだありません。</p>`;
 $("months-done").querySelectorAll("[data-done-k]").forEach((b) =>
 b.addEventListener("click", async () => {
 const [yy, mm] = b.dataset.doneK.split("-").map(Number);
@@ -1359,13 +1368,29 @@ function renderSummary() {
 const byMonth = histByMonth();
 const keys = [...byMonth.keys()].sort().reverse();
 const tG = histAll.reduce((a, r) => a + r.gross, 0), tD = histAll.reduce((a, r) => a + r.ded_total, 0), tN = histAll.reduce((a, r) => a + r.net, 0);
-$("summary-body").innerHTML =
-keys.map((k) => {
+const yearOf = (k) => k.slice(0, 4);
+const yearSum = (y) => keys.filter((k) => yearOf(k) === y).reduce((a, k) => {
 const o = byMonth.get(k);
-return `<div class="t-row" style="padding:10px 0;border-bottom:1px solid var(--line)">
-<span>${k.slice(0, 4)}年${Number(k.slice(5, 7))}月（${o.count}件）</span>
+a.count += o.count; a.kara += o.karaGross || 0; a.bar += o.barGross || 0; a.gross += o.gross; a.net += o.net;
+return a;
+}, { count: 0, kara: 0, bar: 0, gross: 0, net: 0 });
+let lastYear = "";
+let monthsHtml = "";
+keys.forEach((k) => {
+const o = byMonth.get(k);
+const y = yearOf(k);
+if (y !== lastYear) {
+if (lastYear) { const s = yearSum(lastYear); monthsHtml += `<div class="t-row year-sum"><span>${lastYear}年の合計（${s.count}件）</span><span style="text-align:right">辛麺屋 ${fmtYen(s.kara)}／BAR ${fmtYen(s.bar)}<br>支給 ${fmtYen(s.gross)}／差引 <b>${fmtYen(s.net)}</b></span></div>`; }
+monthsHtml += `<h4 class="year-label">${y}年</h4>`;
+lastYear = y;
+}
+monthsHtml += `<div class="t-row" style="padding:10px 0;border-bottom:1px solid var(--line)">
+<span>${Number(k.slice(5, 7))}月（${o.count}件）</span>
 <span style="text-align:right">辛麺屋 支給 ${fmtYen(o.karaGross || 0)}<br>BAR 支給 ${fmtYen(o.barGross || 0)}<br>合計 支給 ${fmtYen(o.gross)}／差引 <b>${fmtYen(o.net)}</b></span></div>`;
-}).join("") +
+});
+if (lastYear) { const s = yearSum(lastYear); monthsHtml += `<div class="t-row year-sum"><span>${lastYear}年の合計（${s.count}件）</span><span style="text-align:right">辛麺屋 ${fmtYen(s.kara)}／BAR ${fmtYen(s.bar)}<br>支給 ${fmtYen(s.gross)}／差引 <b>${fmtYen(s.net)}</b></span></div>`; }
+$("summary-body").innerHTML =
+monthsHtml +
 `<div class="pay-totals" style="margin-top:12px">
 <div class="t-row"><span>辛麺屋 物語の支給合計（全期間）</span><span>${fmtYen(histAll.filter((r) => shopGroup(r.shop) === "kara").reduce((a, r) => a + r.gross, 0))}</span></div>
 <div class="t-row"><span>BAR OK ROCKの支給合計（全期間）</span><span>${fmtYen(histAll.filter((r) => shopGroup(r.shop) === "bar").reduce((a, r) => a + r.gross, 0))}</span></div>
@@ -1446,10 +1471,10 @@ calc.push([y, m]);
 m++; if (m > 11) { m = 0; y++; }
 }
 calc.reverse();
-$("slips-calc").innerHTML = calc.map(([yy, mm]) =>
+$("slips-calc").innerHTML = yearHeads(calc, (c) => String(c[0]), ([yy, mm]) =>
 `<button type="button" class="folder-row" data-scalc-y="${yy}" data-scalc-m="${mm}">
 <span class="folder-ico">▸</span><span class="folder-name">${yy}年${mm + 1}月分</span>
-<span class="folder-sub">計算</span><span class="menu-arrow">›</span></button>`).join("");
+<span class="folder-sub">計算</span><span class="menu-arrow">›</span></button>`);
 $("slips-calc").querySelectorAll("[data-scalc-y]").forEach((b) =>
 b.addEventListener("click", async () => {
 view.y = Number(b.dataset.scalcY); view.m = Number(b.dataset.scalcM);
@@ -1458,12 +1483,12 @@ printAllCalcSlips();
 }));
 const byMonth = histByMonth();
 const keys = [...byMonth.keys()].sort().reverse();
-$("slips-done").innerHTML = keys.map((k) => {
+$("slips-done").innerHTML = keys.length? yearHeads(keys, (k) => k.slice(0, 4), (k) => {
 const o = byMonth.get(k);
 return `<button type="button" class="folder-row" data-sdone-k="${k}">
 <span class="folder-ico">▸</span><span class="folder-name">${k.slice(0, 4)}年${Number(k.slice(5, 7))}月分</span>
 <span class="folder-sub">${o.count}件</span><span class="menu-arrow">›</span></button>`;
-}).join("") || `<p class="hint">まだありません。</p>`;
+}): `<p class="hint">まだありません。</p>`;
 $("slips-done").querySelectorAll("[data-sdone-k]").forEach((b) =>
 b.addEventListener("click", async () => {
 const [yy, mm] = b.dataset.sdoneK.split("-").map(Number);

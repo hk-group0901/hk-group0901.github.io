@@ -601,3 +601,7 @@ body { background: #ECECEC; }
 .folder-ico { font-size: 1.1rem; font-weight: 900; }
 .folder-name { font-size: 1.15rem; font-weight: 900; color: var(--ink); }
 .folder-sub { margin-left: auto; font-size: .9rem; color: var(--muted); font-weight: 700; }
+
+/* 年区切り */
+.year-label { font-size: 1rem; font-weight: 900; margin: 16px 0 8px; padding-left: 10px; border-left: 5px solid #111; }
+.year-sum { background: var(--hatch-widget-surface-muted, #f2f2f2); border-radius: 10px; padding: 10px 8px; margin: 6px 0 4px; font-weight: 700; }

@@ -1,16 +1,16 @@
 /* 辛麺屋 物語 給与アプリ Service Worker
    - 静的ファイルのキャッシュ（オフラインでも画面が開けるように）
 */
-const CACHE_NAME = "hk-payroll-v12";
+const CACHE_NAME = "hk-payroll-v13";
 const STATIC_FILES = [
-  "./?v=12",
-  "./index.html?v=12",
-  "./styles.css?v=12",
-  "./app.js?v=12",
-  "./config.js?v=12",
-  "./manifest.json?v=12",
-  "./icons/icon-192.png?v=12",
-  "./icons/icon-512.png?v=12"
+  "./?v=13",
+  "./index.html?v=13",
+  "./styles.css?v=13",
+  "./app.js?v=13",
+  "./config.js?v=13",
+  "./manifest.json?v=13",
+  "./icons/icon-192.png?v=13",
+  "./icons/icon-512.png?v=13"
 ];
 
 self.addEventListener("install", (event) => {
