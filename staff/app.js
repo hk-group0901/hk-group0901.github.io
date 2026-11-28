@@ -2038,6 +2038,41 @@ return `${d.getMonth() + 1}/${d.getDate()}（${DOW[d.getDay()]}）${bands.map((b
 return `<div class="adm-req-staff"><span class="adm-badge ok">提出済み</span> <b>${esc(s.name)}</b>` +
 `<div class="hint">${lines.map(esc).join("<br>")}</div></div>`;
 }).join("");
+// 希望カレンダー：日ごとに「区分＋希望者の短い名前」を並べて、
+// 誰がいつ入りたいかをカレンダー形式でひと目で分かるようにする。
+const reqByDate = new Map();
+reqs.filter((r) => r.status!== "rejected").forEach((r) => {
+if (!reqByDate.has(r.date)) reqByDate.set(r.date, []);
+reqByDate.get(r.date).push(r);
+});
+const shortName = (id) => (STAFF.find((s) => s.id === id) || {}).short || "";
+buildCalendar($("adm-req-calendar"), y, m, (date, d) => {
+const ds = fmtDate(date);
+const closed = date.getDay() === CFG.SHOP.closedWeekday;
+const dayReqs = reqByDate.get(ds) || [];
+const lines = ["lunch", "dinner", "late"].map((b) => {
+const names = dayReqs.filter((r) => r.band === b).map((r) => shortName(r.staff_id)).filter(Boolean);
+if (!names.length) return "";
+return `<div class="req-line ${b}"><span class="req-band">${BAND_SHORT[b]}</span>${esc(names.join("・"))}</div>`;
+}).join("");
+const dowCls = date.getDay() === 0? " sun": date.getDay() === 6? " sat": "";
+return `<button class="cal-day${closed? " closed": ""}${dowCls}" data-date="${ds}">
+<span class="dnum">${d}</span>${closed? '<span class="tag">定休日</span>': lines}</button>`;
+}, (ds) => renderAdminReqDay(ds, reqByDate.get(ds) || []));
+}
+function renderAdminReqDay(ds, dayReqs) {
+const d = new Date(ds);
+const title = `${d.getMonth() + 1}/${d.getDate()}（${DOW[d.getDay()]}）の希望`;
+if (!dayReqs.length) {
+$("adm-req-day").innerHTML = `${esc(title)}：希望はありません`;
+return;
+}
+const lines = ["lunch", "dinner", "late"].map((b) => {
+const names = dayReqs.filter((r) => r.band === b).map((r) => staffName(r.staff_id)).filter(Boolean);
+if (!names.length) return "";
+return `${BAND[b].label}（${BAND[b].time}）：${names.join("、")}`;
+});
+$("adm-req-day").innerHTML = `<b>${esc(title)}</b><br>` + lines.filter(Boolean).map(esc).join("<br>");
 }
 
 // ---------- 2. 日別シフト（全員分・名前列 sticky） ----------
