@@ -300,14 +300,20 @@ otMin += Math.max(0, w - 480);
 });
 // 辛麺屋出勤手当（cross_allowance が設定されたスタッフのみ：柳村・島本）：
 // 基本BAR勤務のため、辛麺屋に出勤した日は1日あたり cross_allowance 円を
-// 所定時間外賃金として支給する。社員2名は打刻しない運用（2026-11-28決定）の
-// ため、日数は打刻ではなく「その月の確定シフトに登録がある distinct な日」で
-// 数える（手当は日数×単価のみで、時間は給与に影響しない）。
+// 所定時間外賃金として支給する。日数は「その月に打刻（出勤タップ）の記録が
+// ある distinct な日」で数える（2026-11-28変更：シフト通りでない出勤がある
+// ため実績連動にした。出勤タップのみ・退勤は不要・時刻は給与に影響しない）。
 const crossRate = staff.cross_allowance || 0;
 let crossDays = 0;
 if (crossRate > 0) {
+// 2026年11月分までは打刻データが無いため確定シフトの日数で数え、
+// 2026年12月分から打刻（出勤タップ）のあった日数で数える。
+if (y * 100 + (m + 1) >= 202612) {
+crossDays = new Set(records.filter((r) => r.clock_in).map((r) => r.date)).size;
+} else {
 const monthShifts = await DB.listShifts(y, m);
 crossDays = new Set(monthShifts.filter((s) => s.staff_id === staff.id).map((s) => s.date)).size;
+}
 }
 const crossPay = crossRate * crossDays;
 // 社会保険（健康保険・厚生年金・子ども子育て支援金）の加入判定。
@@ -324,7 +330,7 @@ if (isSalary) {
 // 社員（月給制）：打刻からの時給計算はせず、固定給＋手当で組み立てる。
 //   基本給（base_salary）＋役職手当＋深夜手当（固定額 fixed_night_allowance）
 //   ＋みなし残業＋交通費＋ドリンクバック
-//   ＋所定時間外賃金（辛麺屋出勤手当 = cross_allowance × 確定シフトの日数）
+//   ＋所定時間外賃金（辛麺屋出勤手当 = cross_allowance × 打刻した日数）
 // ドリンクバックは月ごとに変わるため、対象月の金額を staff.drink_back に
 // 入力しておく運用（従来の月次手当入力と同じ仕組み）。
 earnings = [
