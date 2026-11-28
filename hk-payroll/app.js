@@ -635,7 +635,11 @@ b.addEventListener("click", () => renderDetail(Number(b.dataset.payIdx))));
 const tGross = payrolls.reduce((a, x) => a + x.p.gross, 0);
 const tDed = payrolls.reduce((a, x) => a + x.p.dedTotal, 0);
 const tNet = payrolls.reduce((a, x) => a + x.p.net, 0);
+const tKara = payrolls.filter((x) => shopGroup(x.staff.shop_name || x.staff.shop) === "kara").reduce((a, x) => a + x.p.gross, 0);
+const tBar = payrolls.filter((x) => shopGroup(x.staff.shop_name || x.staff.shop) === "bar").reduce((a, x) => a + x.p.gross, 0);
 $("pay-totals").innerHTML =
+`<div class="t-row"><span>支給（辛麺屋 物語）</span><span>${fmtYen(tKara)}</span></div>` +
+`<div class="t-row"><span>支給（BAR OK ROCK）</span><span>${fmtYen(tBar)}</span></div>` +
 `<div class="t-row"><span>支給合計（全員）</span><span>${fmtYen(tGross)}</span></div>` +
 `<div class="t-row"><span>控除合計（全員）</span><span>${fmtYen(tDed)}</span></div>` +
 `<div class="t-row t-net"><span>差引支給額（全員）</span><span>${fmtYen(tNet)}</span></div>`;
@@ -949,7 +953,11 @@ b.addEventListener("click", () => renderHistDetail(Number(b.dataset.histIdx))));
 const tG = histRows.reduce((a, r) => a + r.gross, 0);
 const tD = histRows.reduce((a, r) => a + r.ded_total, 0);
 const tN = histRows.reduce((a, r) => a + r.net, 0);
+const tGK = histRows.filter((r) => shopGroup(r.shop) === "kara").reduce((a, r) => a + r.gross, 0);
+const tGB = histRows.filter((r) => shopGroup(r.shop) === "bar").reduce((a, r) => a + r.gross, 0);
 $("hist-totals").innerHTML =
+`<div class="t-row"><span>支給（辛麺屋 物語）</span><span>${fmtYen(tGK)}</span></div>` +
+`<div class="t-row"><span>支給（BAR OK ROCK）</span><span>${fmtYen(tGB)}</span></div>` +
 `<div class="t-row"><span>支給合計（全員）</span><span>${fmtYen(tG)}</span></div>` +
 `<div class="t-row"><span>控除合計（全員）</span><span>${fmtYen(tD)}</span></div>` +
 `<div class="t-row t-net"><span>差引支給額（全員）</span><span>${fmtYen(tN)}</span></div>`;
@@ -1165,15 +1173,26 @@ function personBadge(p) {
 if (p.staff) return p.staff.active === false? "退職": "在籍中";
 return CURRENT_EXTRA[normName(p.name)] || "過去のスタッフ";
 }
+function personDept(p) {
+if (p.staff) return shopGroup(p.staff.shop_name || p.staff.shop);
+let kara = 0, bar = 0;
+p.rows.forEach((r) => { const g = shopGroup(r.shop); if (g === "kara") kara++; else if (g === "bar") bar++; });
+return bar > kara? "bar": kara > 0? "kara": "other";
+}
 function renderPeople() {
 const arr = peopleIndex();
-$("people-list").innerHTML = arr.map((p, i) => {
+const groups = { kara: [], bar: [], other: [] };
+arr.forEach((p, i) => groups[personDept(p)].push([p, i]));
+$("people-list").innerHTML = ["kara", "bar", "other"].map((g) => {
+if (!groups[g].length) return "";
+return `<h3 class="sec-label">${DEPT_LABEL[g]}</h3>` + groups[g].map(([p, i]) => {
 const last = p.rows[0];
 return `<button type="button" class="adm-pay-row" data-people-idx="${i}">
 <span><span class="pname">${esc(p.name)}</span> <span class="badge-mini">${personBadge(p)}</span><br>
 <span class="adm-pay-sub">${p.rows.length? `明細 ${p.rows.length}件／直近 ${p.latest.slice(0, 4)}年${Number(p.latest.slice(5, 7))}月 差引 ${fmtYen(last? last.net: 0)}`: "過去の明細なし"}</span></span>
 <span class="pnet" style="font-size:1rem;color:var(--ink)">›</span>
 </button>`;
+}).join("");
 }).join("") || `<p class="hint">従業員がいません。</p>`;
 $("people-list").querySelectorAll("[data-people-idx]").forEach((b) =>
 b.addEventListener("click", () => renderPerson(arr[Number(b.dataset.peopleIdx)])));
@@ -1273,6 +1292,13 @@ if (idx >= 0) { showMainView("settings"); renderSettingsForm(idx); }
 $("person-close").addEventListener("click", () => { $("person-detail").innerHTML = ""; });
 $("person-detail").scrollIntoView({ behavior: "smooth", block: "start" });
 }
+function shopGroup(shop) {
+const t = String(shop || "");
+if (t.includes("BAR")) return "bar";
+if (t.includes("辛麺")) return "kara";
+return "other";
+}
+const DEPT_LABEL = { kara: "辛麺屋 物語", bar: "BAR OK ROCK", other: "その他" };
 function histByMonth() {
 const byMonth = new Map();
 histAll.forEach((r) => {
@@ -1280,6 +1306,9 @@ const k = r.month.slice(0, 7);
 if (!byMonth.has(k)) byMonth.set(k, { count: 0, gross: 0, ded: 0, net: 0 });
 const o = byMonth.get(k);
 o.count++; o.gross += r.gross; o.ded += r.ded_total; o.net += r.net;
+const g = shopGroup(r.shop);
+if (g === "kara") { o.karaGross = (o.karaGross || 0) + r.gross; o.karaNet = (o.karaNet || 0) + r.net; }
+if (g === "bar") { o.barGross = (o.barGross || 0) + r.gross; o.barNet = (o.barNet || 0) + r.net; }
 });
 return byMonth;
 }
@@ -1330,9 +1359,11 @@ keys.map((k) => {
 const o = byMonth.get(k);
 return `<div class="t-row" style="padding:10px 0;border-bottom:1px solid var(--line)">
 <span>${k.slice(0, 4)}年${Number(k.slice(5, 7))}月（${o.count}件）</span>
-<span style="text-align:right">支給 ${fmtYen(o.gross)}<br>差引 <b>${fmtYen(o.net)}</b></span></div>`;
+<span style="text-align:right">辛麺屋 支給 ${fmtYen(o.karaGross || 0)}<br>BAR 支給 ${fmtYen(o.barGross || 0)}<br>合計 支給 ${fmtYen(o.gross)}／差引 <b>${fmtYen(o.net)}</b></span></div>`;
 }).join("") +
 `<div class="pay-totals" style="margin-top:12px">
+<div class="t-row"><span>辛麺屋 物語の支給合計（全期間）</span><span>${fmtYen(histAll.filter((r) => shopGroup(r.shop) === "kara").reduce((a, r) => a + r.gross, 0))}</span></div>
+<div class="t-row"><span>BAR OK ROCKの支給合計（全期間）</span><span>${fmtYen(histAll.filter((r) => shopGroup(r.shop) === "bar").reduce((a, r) => a + r.gross, 0))}</span></div>
 <div class="t-row"><span>全期間の支給合計</span><span>${fmtYen(tG)}</span></div>
 <div class="t-row"><span>全期間の控除合計</span><span>${fmtYen(tD)}</span></div>
 <div class="t-row t-net"><span>全期間の差引合計</span><span>${fmtYen(tN)}</span></div>
@@ -1340,10 +1371,10 @@ return `<div class="t-row" style="padding:10px 0;border-bottom:1px solid var(--l
 <button class="btn-ghost" id="summary-csv" type="button" style="width:100%;margin-top:12px">月別合計をCSVで出す</button>`;
 $("summary-csv").addEventListener("click", () => {
 const escCsv = (v) => `"${String(v == null? "": v).replace(/"/g, '""')}"`;
-const lines = [["年月", "件数", "支給合計", "控除合計", "差引合計"].join(",")];
+const lines = [["年月", "件数", "辛麺屋支給", "BAR支給", "支給合計", "控除合計", "差引合計"].join(",")];
 [...byMonth.keys()].sort().forEach((k) => {
 const o = byMonth.get(k);
-lines.push([`${k.slice(0, 4)}年${Number(k.slice(5, 7))}月`, o.count, o.gross, o.ded, o.net].map(escCsv).join(","));
+lines.push([`${k.slice(0, 4)}年${Number(k.slice(5, 7))}月`, o.count, o.karaGross || 0, o.barGross || 0, o.gross, o.ded, o.net].map(escCsv).join(","));
 });
 const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
 const a = document.createElement("a");
@@ -1405,12 +1436,17 @@ let allStaff = [];
 async function renderSettings() {
 if (DEMO) { $("staff-settings-list").innerHTML = `<p class="hint">デモモードでは使えません。</p>`; return; }
 allStaff = await DB.listAllStaff();
-$("staff-settings-list").innerHTML = allStaff.map((s, i) =>
+const setGroups = { kara: [], bar: [], other: [] };
+allStaff.forEach((s, i) => setGroups[shopGroup(s.shop_name || s.shop)].push([s, i]));
+$("staff-settings-list").innerHTML = ["kara", "bar", "other"].map((g) => {
+if (!setGroups[g].length) return "";
+return `<h3 class="sec-label">${DEPT_LABEL[g]}</h3>` + setGroups[g].map(([s, i]) =>
 `<button type="button" class="adm-pay-row" data-set-idx="${i}">
 <span><span class="pname">${esc(s.name)}</span>${s.active? "": "（退職）"}<br>
 <span class="adm-pay-sub">${esc(s.shop_name || "")}／${s.pay_type === "salary"? "月給制": "時給制"}／${s.pay_type === "salary"? `基本給 ${fmtYen(s.base_salary || 0)}`: `時給 ${fmtYen(s.hourly_wage)}`}</span></span>
 <span class="pnet" style="font-size:1rem;color:var(--ink)">設定 ›</span>
 </button>`).join("");
+}).join("");
 $("staff-settings-list").querySelectorAll("[data-set-idx]").forEach((b) =>
 b.addEventListener("click", () => renderSettingsForm(Number(b.dataset.setIdx))));
 }
