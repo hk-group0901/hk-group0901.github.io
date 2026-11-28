@@ -1334,16 +1334,19 @@ buildCalendar($("sch-calendar"), y, m, (date, d) => {
 const ds = fmtDate(date);
 const closed = date.getDay() === CFG.SHOP.closedWeekday;
 const dayShifts = byDate.get(ds) || [];
-// 人数不足の判定（Airシフトの運用ルール）：昼は2名（日曜は昼営業なし）、
-// 夜はディナー平日2名・金土3名、深夜は1名以上。定休日は対象外。
+// 人数不足の判定（神坂さんのルール、2026-11-28確認）：昼は2名（日曜は昼営業なし）、
+// ディナーは常に2名、深夜は平日2名・金土は調理できる人を含めて3名。定休日は対象外。
 const dow = date.getDay();
 const cnt = (b) => dayShifts.filter((s) => s.band === b).length;
-const nightReq = (dow === 5 || dow === 6)? 3: 2;
 const short = new Set();
 if (!closed) {
 if (dow!== 0 && cnt("lunch") < 2) short.add("lunch");
-if (cnt("dinner") < nightReq) short.add("dinner");
-if (cnt("late") < 1) short.add("late");
+if (cnt("dinner") < 2) short.add("dinner");
+const lateRows = dayShifts.filter((s) => s.band === "late");
+if (dow === 5 || dow === 6) {
+const hasCook = lateRows.some((s) => (STAFF.find((x) => x.id === s.staff_id) || {}).can_cook);
+if (lateRows.length < 3 ||!hasCook) short.add("late");
+} else if (lateRows.length < 2) short.add("late");
 }
 const tags = ["lunch", "dinner", "late"].map((b) => {
 // 月カレンダーには名前を出さず、区分ごとの人数チップだけ出す。
