@@ -32,7 +32,7 @@ function toast(msg) {
 const t = $("toast"); t.textContent = msg; t.classList.add("show");
 setTimeout(() => t.classList.remove("show"), 2600);
 }
-const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+const uid = () => { if (crypto.randomUUID) return crypto.randomUUID(); const b = crypto.getRandomValues(new Uint8Array(16)); b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80; const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join(""); return h.slice(0, 8) + "-" + h.slice(8, 12) + "-" + h.slice(12, 16) + "-" + h.slice(16, 20) + "-" + h.slice(20); };
 
 // ============================================================
 // デモデータ
@@ -219,8 +219,9 @@ const { data} = await sb.from("shift_requests").select("*").eq("staff_id", staff
 return data || [];
 },
 async addRequests(rows) {
-if (DEMO) { rows.forEach((r) => demoDB.shift_requests.push(r)); saveDemo(); return;}
-await sb.from("shift_requests").insert(rows);
+if (DEMO) { rows.forEach((r) => demoDB.shift_requests.push(r)); saveDemo(); return null;}
+const { error } = await sb.from("shift_requests").insert(rows);
+return error;
 },
 async listNotifications(staffId) {
 if (DEMO) return demoDB.notifications.filter((n) => n.staff_id === staffId)
@@ -1289,7 +1290,8 @@ const rows = [...reqState.selected]
 .filter((ds) =>!dup.has(ds + "|" + reqState.band))
 .map((ds) => ({ id: uid(), staff_id: ME.id, date: ds, band: reqState.band, status: "pending", created_at: new Date().toISOString()}));
 if (!rows.length) { toast("選んだ日はもう提出ずみでした"); return;}
-await DB.addRequests(rows);
+const err1 = await DB.addRequests(rows);
+if (err1) { toast("保存できませんでした。もう一度試してね"); return;}
 reqState.selected.clear();
 toast(`${rows.length}日分を提出しました。ありがとう！`);
 renderRequest();
@@ -1310,7 +1312,8 @@ const ds = fmtDate(nd);
 if (!dup.has(ds + "|" + r.band)) rows.push({ id: uid(), staff_id: ME.id, date: ds, band: r.band, status: "pending", created_at: new Date().toISOString()});
 });
 if (!rows.length) { toast("コピーできる希望がありませんでした"); return;}
-await DB.addRequests(rows);
+const err2 = await DB.addRequests(rows);
+if (err2) { toast("保存できませんでした。もう一度試してね"); return;}
 toast(`前月から${rows.length}件コピーして提出しました`);
 renderRequest();
 });
