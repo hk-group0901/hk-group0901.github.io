@@ -2,7 +2,7 @@
    - 静的ファイルのキャッシュ（オフラインでも画面が開けるように）
    - Web Push の受信と通知表示
 */
-const CACHE_NAME = "karamenya-staff-v11";
+const CACHE_NAME = "karamenya-staff-v12";
 const STATIC_FILES = [
   "./",
   "./index.html",

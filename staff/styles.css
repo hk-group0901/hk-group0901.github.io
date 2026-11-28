@@ -324,6 +324,12 @@ body.admin-dark .logout-row button { color: #9C8692; }
 .day-chart table { border-collapse: collapse; min-width: 520px; width: 100%; }
 .day-chart th, .day-chart td { border-bottom: 1px solid var(--line); padding: 7px 4px; font-size: .9rem; }
 .day-chart th.name, .day-chart td.name { width: 96px; font-weight: 800; white-space: nowrap; }
+/* 名前列は横スクロールしても左端に追従させる（バーが下を滑るよう背景を付ける） */
+.day-chart td.name {
+  position: sticky; left: 0; z-index: 2;
+  background: var(--card); border-right: 1px solid var(--line);
+}
+.day-chart tr.me td.name { background: #FFF3F7; }
 .day-chart tr.me td { background: #FFF3F7; }
 .day-chart tr.me td.name { color: var(--accent-deep); }
 .bar-cell { position: relative; height: 28px; }
