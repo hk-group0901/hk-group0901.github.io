@@ -280,10 +280,12 @@ demoDB.notifications.push({ id: uid(), staff_id: a.id, type: "correction_request
 title: "打刻の訂正依頼が届いています", body: `${ME.name}さんから訂正依頼が届きました。お知らせ画面で確認してください。`,
 created_at: new Date().toISOString(), read: false, work_request_id: null });
 });
-saveDemo(); return;
+saveDemo(); return null;
 }
-await sb.from("correction_requests").insert(row);
+const { error } = await sb.from("correction_requests").insert(row);
+if (error) return error;
 try { await sb.functions.invoke("correction-request-created", { body: { correction_request_id: row.id } }); } catch (e) {}
+return null;
 },
 async myCorrectionRequests(staffId) {
 if (DEMO) return (demoDB.correction_requests || []).filter((c) => c.staff_id === staffId)
@@ -1149,13 +1151,14 @@ const s = corrStamps[Number($("corr-stamp").value)];
 if (!s) { toast("間違えた打刻を選んでね"); return; }
 const date = $("corr-date").value, time = $("corr-time").value;
 if (!date || !time) { toast("正しい日付と時刻を入れてね"); return; }
-await DB.addCorrectionRequest({
+const corrErr = await DB.addCorrectionRequest({
 id: uid(), staff_id: ME.id, attendance_id: s.attendanceId,
 field: s.field, break_index: s.breakIndex,
 requested_at: new Date(`${date}T${time}:00`).toISOString(),
 reason: $("corr-reason").value.trim() || null,
 status: "pending", created_at: new Date().toISOString()
 });
+if (corrErr) { toast("保存できませんでした。もう一度試してね"); return;}
 $("corr-reason").value = "";
 toast("訂正をお願いしました。結果はお知らせで届きます");
 renderCorrections(); refreshInboxBadge();
