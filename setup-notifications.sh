@@ -537,9 +537,9 @@ supabase link --project-ref "$REF"
 supabase secrets set \
   "VAPID_KEYS_JSON=$(cat /tmp/vapid_keys.json)" \
   "VAPID_SUBJECT=mailto:h.kgroup0901@gmail.com" \
-  "WEBHOOK_SECRET=$(cat /tmp/webhook_secret.txt)"
+  "WEBHOOK_SECRET=$(cat /tmp/webhook_secret.txt)" --yes
 for f in work-request-created work-request-answered shifts-confirmed correction-request-created correction-request-decided; do
-  supabase functions deploy "$f" --no-verify-jwt
+  supabase functions deploy "$f" --no-verify-jwt --yes
 done
 
 echo "=== 4) Creating database webhooks ==="
