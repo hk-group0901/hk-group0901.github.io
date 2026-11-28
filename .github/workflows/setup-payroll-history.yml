@@ -1,0 +1,52 @@
+name: Setup payroll history
+on:
+  workflow_dispatch:
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create payroll_history table
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, json, urllib.request
+          TOKEN = os.environ["SUPABASE_ACCESS_TOKEN"]
+          REF = "wdbkdwhtocbdaufxufqs"
+          sql = """
+          create table if not exists public.payroll_history (
+            id uuid primary key default gen_random_uuid(),
+            month date not null,
+            name text not null,
+            shop text,
+            days int,
+            work_min int,
+            ot_min int,
+            pay jsonb not null default '{}'::jsonb,
+            gross int not null default 0,
+            ded jsonb not null default '{}'::jsonb,
+            ded_total int not null default 0,
+            net int not null default 0,
+            note text,
+            created_at timestamptz not null default now(),
+            unique (month, name)
+          );
+          alter table public.payroll_history enable row level security;
+          drop policy if exists ph_select_admin on public.payroll_history;
+          create policy ph_select_admin on public.payroll_history
+            for select to authenticated using (public.is_admin_or_sub());
+          drop policy if exists ph_write_admin on public.payroll_history;
+          create policy ph_write_admin on public.payroll_history
+            for all to authenticated
+            using (public.is_admin_or_sub()) with check (public.is_admin_or_sub());
+          grant select, insert, update, delete on public.payroll_history to authenticated;
+          """
+          req = urllib.request.Request(
+              f"https://api.supabase.com/v1/projects/{REF}/database/query",
+              data=json.dumps({"query": sql}).encode(),
+              headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"},
+              method="POST")
+          with urllib.request.urlopen(req, timeout=120) as r:
+              print(r.read().decode()[:500])
+          print("PAYROLL_HISTORY_SETUP_DONE")
+          PYEOF
