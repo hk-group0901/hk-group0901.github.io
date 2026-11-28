@@ -476,6 +476,8 @@ document.querySelectorAll("[data-go]").forEach((b) =>
 b.addEventListener("click", () => { navStack.length = 0; activateView("home"); if (b.dataset.go !== "home") showMainView(b.dataset.go); }));
 document.querySelectorAll(".back-btn").forEach((b) =>
 b.addEventListener("click", goBack));
+document.querySelectorAll("[data-nav]").forEach((b) =>
+b.addEventListener("click", () => showMainView(b.dataset.nav)));
 
 async function enterApp() {
 STAFF = (await DB.listStaff()).filter((s) => s.role!== "kiosk");
@@ -1140,11 +1142,12 @@ $("hist-next").addEventListener("click", async () => { shiftHist(1); await rende
 let histAll = [];
 const normName = (n) => (n || "").replace(/\s/g, "");
 async function refreshHistSide() {
-if (DEMO) { $("people-card").style.display = "none"; $("summary-card").style.display = "none"; document.querySelectorAll(".real-only").forEach((el) => { el.style.display = "none"; }); renderMonths(); return; }
+if (DEMO) { $("people-card").style.display = "none"; $("summary-card").style.display = "none"; document.querySelectorAll(".real-only").forEach((el) => { el.style.display = "none"; }); renderMonths(); renderSlipMonths(); return; }
 histAll = await DB.listPayrollHistoryAll();
 renderPeople();
 renderSummary();
 renderMonths();
+renderSlipMonths();
 }
 function peopleIndex() {
 const map = new Map();
@@ -1384,6 +1387,88 @@ a.click();
 URL.revokeObjectURL(a.href);
 toast("CSVを出しました");
 });
+}
+function printAllCalcSlips() {
+if (!payrolls.length) { toast("この月の計算データがありません"); return; }
+const w = window.open("", "_blank");
+if (!w) { toast("ポップアップがブロックされました"); return; }
+const trs = (items, totalLabel, total) =>
+items.map((i) => `<tr><td>${esc(i.label)}</td><td class="num">${fmtYen(i.amount)}</td></tr>`).join("") +
+`<tr class="total"><td>${totalLabel}</td><td class="num">${fmtYen(total)}</td></tr>`;
+const slip = ({ staff: s, p }) => `<section>
+<h1>給料支払明細書（${view.y}年${view.m + 1}月分）</h1>
+<div class="name">${esc(s.name)} 殿</div>
+<h2>勤怠</h2>
+<table>
+<tr><th>労働期間</th><td>${p.period}</td><th>労働日数</th><td>${p.days}日</td></tr>
+<tr><th>労働時間</th><td>${fmtHM(p.workMin)}</td><th>所定時間外労働</th><td>${fmtHM(p.otMin)}</td></tr>
+</table>
+<h2>支給額</h2>
+<table>${trs(p.earnings, "支給合計", p.gross)}</table>
+<h2>控除額</h2>
+<table>${trs(p.deductions, "控除合計", p.dedTotal)}</table>
+<div class="net">差引支給額　<span class="amt">${fmtYen(p.net)}</span></div>
+<div>備考：所属店舗 ${esc(s.shop_name || "辛麺屋 物語 中町本店")}／所得税・社会保険料は概算です</div>
+<div class="foot">株式会社H&Kグループ</div>
+</section>`;
+w.document.write(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<title>給料支払明細書（全員分）</title><style>
+@page{size:A4 portrait;margin:14mm}
+body{font-family:"Hiragino Sans","Noto Sans JP",sans-serif;color:#222;font-size:13px}
+section{page-break-after:always}
+section:last-child{page-break-after:auto}
+h1{font-size:19px;text-align:center;margin:0 0 4px}
+.name{font-size:15px;font-weight:700;margin:10px 0}
+table{width:100%;border-collapse:collapse;margin:8px 0 14px}
+th,td{border:1px solid #888;padding:5px 8px}
+th{background:#F7F2EC;text-align:left}
+td.num{text-align:right}
+tr.total td{font-weight:800;background:#F7F2EC}
+h2{font-size:14px;margin:14px 0 4px;border-left:5px solid #D94036;padding-left:8px}
+.net{text-align:center;border:2px solid #222;padding:12px;margin:16px 0}
+.net .amt{font-size:26px;font-weight:900}
+.foot{text-align:right;margin-top:24px;font-weight:700}
+</style></head><body>
+${payrolls.map(slip).join("")}
+<script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script>
+</body></html>`);
+w.document.close();
+}
+function renderSlipMonths() {
+const now = new Date();
+const endY = now.getFullYear(), endM = now.getMonth() + 1;
+const calc = [];
+let y = 2026, m = 10;
+while (y < endY || (y === endY && m <= endM)) {
+calc.push([y, m]);
+m++; if (m > 11) { m = 0; y++; }
+}
+calc.reverse();
+$("slips-calc").innerHTML = calc.map(([yy, mm]) =>
+`<button type="button" class="folder-row" data-scalc-y="${yy}" data-scalc-m="${mm}">
+<span class="folder-ico">▸</span><span class="folder-name">${yy}年${mm + 1}月分</span>
+<span class="folder-sub">計算</span><span class="menu-arrow">›</span></button>`).join("");
+$("slips-calc").querySelectorAll("[data-scalc-y]").forEach((b) =>
+b.addEventListener("click", async () => {
+view.y = Number(b.dataset.scalcY); view.m = Number(b.dataset.scalcM);
+await renderAll();
+printAllCalcSlips();
+}));
+const byMonth = histByMonth();
+const keys = [...byMonth.keys()].sort().reverse();
+$("slips-done").innerHTML = keys.map((k) => {
+const o = byMonth.get(k);
+return `<button type="button" class="folder-row" data-sdone-k="${k}">
+<span class="folder-ico">▸</span><span class="folder-name">${k.slice(0, 4)}年${Number(k.slice(5, 7))}月分</span>
+<span class="folder-sub">${o.count}件</span><span class="menu-arrow">›</span></button>`;
+}).join("") || `<p class="hint">まだありません。</p>`;
+$("slips-done").querySelectorAll("[data-sdone-k]").forEach((b) =>
+b.addEventListener("click", async () => {
+const [yy, mm] = b.dataset.sdoneK.split("-").map(Number);
+hist.y = yy; hist.m = mm - 1;
+await renderHistory();
+printAllHistSlips();
+}));
 }
 function printAllHistSlips() {
 if (!histRows.length) { toast("この月の実績がありません"); return; }
