@@ -544,31 +544,62 @@ done
 
 echo "=== 4) Creating database webhooks ==="
 python3 <<'EOF_PY'
-import json, os, urllib.request
+import json, os, urllib.request, urllib.error
 
 ref = "wdbkdwhtocbdaufxufqs"
 token = os.environ["SUPABASE_ACCESS_TOKEN"]
 with open("/tmp/webhook_secret.txt") as fh:
     secret = fh.read().strip()
 
-def run_sql(sql):
+def run_sql(sql, label):
     req = urllib.request.Request(
         f"https://api.supabase.com/v1/projects/{ref}/database/query",
         data=json.dumps({"query": sql}).encode(),
         headers={"Authorization": f"Bearer {token}",
                  "Content-Type": "application/json"},
         method="POST")
-    with urllib.request.urlopen(req) as res:
-        return res.read().decode()
+    try:
+        with urllib.request.urlopen(req) as res:
+            return res.read().decode()
+    except urllib.error.HTTPError as e:
+        raise SystemExit(f"SQL failed at {label}: HTTP {e.code}")
 
-sig = run_sql("""
-  SELECT pg_get_function_arguments(p.oid) AS args
-  FROM pg_proc p
-  JOIN pg_namespace n ON n.oid = p.pronamespace
-  WHERE n.nspname = 'supabase_functions' AND p.proname = 'http_request'
-  LIMIT 1;
-""")
-print("http_request signature:", sig)
+# pg_net を有効化（Database Webhooks の土台）
+run_sql("CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;", "pg_net")
+print("pg_net ready")
+
+# Webhook 用トリガー関数（pg_net で Edge Function を呼ぶ）
+func_sql = """
+CREATE OR REPLACE FUNCTION public.karamenya_notify_webhook()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+DECLARE
+  payload jsonb;
+  req_id bigint;
+BEGIN
+  payload := jsonb_build_object(
+    'type', TG_OP,
+    'table', TG_TABLE_NAME,
+    'schema', TG_TABLE_SCHEMA,
+    'record', to_jsonb(NEW),
+    'old_record', to_jsonb(OLD));
+  SELECT net.http_post(
+    url := TG_ARGV[0],
+    body := payload,
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'x-webhook-secret', TG_ARGV[1]),
+    timeout_milliseconds := 5000
+  ) INTO req_id;
+  RETURN COALESCE(NEW, OLD);
+END;
+$fn$;
+"""
+run_sql(func_sql, "trigger function")
+print("trigger function ready")
 
 base = f"https://{ref}.supabase.co/functions/v1"
 hooks = [
@@ -578,23 +609,20 @@ hooks = [
     ("notify-correction-decided", "correction_requests", "UPDATE", f"{base}/correction-request-decided"),
 ]
 for name, table, event, url in hooks:
-    headers = json.dumps({"Content-Type": "application/json",
-                          "x-webhook-secret": secret})
     sql = f"""
       DROP TRIGGER IF EXISTS "{name}" ON public.{table};
       CREATE TRIGGER "{name}"
       AFTER {event} ON public.{table}
       FOR EACH ROW
-      EXECUTE FUNCTION supabase_functions.http_request(
-        '{url}', 'POST', '{headers}', '{{}}', '5000');
+      EXECUTE FUNCTION public.karamenya_notify_webhook('{url}', '{secret}');
     """
-    run_sql(sql)
+    run_sql(sql, f"trigger {name}")
     print("trigger created:", name)
 
 out = run_sql("""
   SELECT trigger_name FROM information_schema.triggers
   WHERE trigger_name LIKE 'notify-%' ORDER BY trigger_name;
-""")
+""", "verify triggers")
 print("webhook triggers now:", out)
 EOF_PY
 
