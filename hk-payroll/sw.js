@@ -1,16 +1,16 @@
 /* 辛麺屋 物語 給与アプリ Service Worker
    - 静的ファイルのキャッシュ（オフラインでも画面が開けるように）
 */
-const CACHE_NAME = "hk-payroll-v2";
+const CACHE_NAME = "hk-payroll-v3";
 const STATIC_FILES = [
-  "./",
-  "./index.html",
-  "./styles.css",
-  "./app.js",
-  "./config.js",
-  "./manifest.json",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png"
+  "./?v=3",
+  "./index.html?v=3",
+  "./styles.css?v=3",
+  "./app.js?v=3",
+  "./config.js?v=3",
+  "./manifest.json?v=3",
+  "./icons/icon-192.png?v=3",
+  "./icons/icon-512.png?v=3"
 ];
 
 self.addEventListener("install", (event) => {
@@ -34,6 +34,6 @@ self.addEventListener("fetch", (event) => {
   // Supabase への通信はキャッシュしない
   if (url.hostname.endsWith("supabase.co")) return;
   event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request))
+    caches.match(event.request, { ignoreSearch: true }).then((cached) => cached || fetch(event.request))
   );
 });
