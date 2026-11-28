@@ -878,8 +878,8 @@ function renderKiosk(records) {
 const grid = $("kiosk-grid");
 grid.innerHTML = "";
 const stateLabel = { off: "未出勤", working: "出勤中", break: "休憩中", done: "退勤ずみ"};
-// 社員（月給制）は打刻不要（2026-11-28決定）のため、打刻の名前一覧に出さない。
-STAFF.filter((s) => s.pay_type !== "salary").forEach((s) => {
+// 社員（月給制）と代表（admin）は打刻不要（2026-11-28決定）のため、打刻の名前一覧に出さない。
+STAFF.filter((s) => s.pay_type !== "salary" && s.role !== "admin").forEach((s) => {
 const rec = records.find((a) => a.staff_id === s.id);
 const st = currentStatus(rec);
 const btn = document.createElement("button");
