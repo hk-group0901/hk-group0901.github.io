@@ -38,6 +38,24 @@ body {
 .print-controls .check { display: flex; align-items: center; gap: 6px; font-weight: 700; }
 .print-controls .note { width: 100%; color: #6B5A52; font-size: .88rem; }
 
+/* ---------- ログイン（印刷ページ用・画面のみ） ---------- */
+.login-box {
+  max-width: 520px; margin: 30px auto; background: #fff;
+  border: 2px solid #F0DFCE; border-radius: 16px; padding: 24px;
+}
+.login-box h2 { margin: 0 0 10px; font-size: 1.2rem; }
+.login-box label { display: block; font-weight: 700; margin-top: 14px; }
+.login-box input {
+  width: 100%; font-size: 1.05rem; padding: 11px; margin-top: 6px;
+  border: 2px solid #F0DFCE; border-radius: 10px; font-family: var(--font);
+}
+.login-box .btn-print {
+  background: var(--accent); color: #fff; border: none; border-radius: 12px;
+  padding: 13px 22px; font-size: 1.05rem; font-weight: 800; cursor: pointer;
+  width: 100%; margin-top: 18px;
+}
+.login-error { color: var(--accent); font-weight: 700; min-height: 1.2em; margin: 10px 0 0; }
+
 /* ---------- シフト表本体 ---------- */
 .sheet {
   max-width: 1100px; margin: 0 auto; background: #fff;

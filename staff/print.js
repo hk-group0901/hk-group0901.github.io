@@ -29,6 +29,7 @@
   const $month = document.getElementById("print-month");
   const $split = document.getElementById("split-pages");
   const $root = document.getElementById("sheet-root");
+  let session = null; // 印刷ページ側のログイン状態（アプリとは別に保持される）
   document.getElementById("print-mode-note").textContent =
     useSupabase ? "" : "（現在はデモデータで表示しています）";
 
@@ -56,6 +57,7 @@
       ]);
       if (staffRes.error) throw staffRes.error;
       if (shiftRes.error) throw shiftRes.error;
+      if (!staffRes.data || staffRes.data.length === 0) throw new Error("EMPTY_STAFF");
       const nameById = {};
       staffRes.data.forEach((s) => (nameById[s.id] = s.name));
       return {
@@ -116,8 +118,36 @@
     return parts.join("<br>");
   }
 
+  // ---------- ログイン（印刷ページ用） ----------
+  // アプリ側のログインは別ブラウザに引き継がれないため、印刷ページでも
+  // セッションを確認し、無ければその場でログインしてもらう。
+  // 一度ログインすれば、このブラウザでは次回から不要。
+  function showLogin() {
+    $root.innerHTML =
+      `<div class="login-box">` +
+      `<h2>ログインが必要です</h2>` +
+      `<p>印刷ページには、アプリのログイン情報が引き継がれません。お手数ですが、もう一度ログインしてください。このブラウザでは、次回からログインなしで印刷できます。</p>` +
+      `<label>メールアドレス<input type="email" id="pl-email" autocomplete="username"></label>` +
+      `<label>パスワード<input type="password" id="pl-password" autocomplete="current-password"></label>` +
+      `<button id="pl-btn" class="btn-print">ログインしてシフト表を表示</button>` +
+      `<p class="login-error" id="pl-error"></p>` +
+      `</div>`;
+    document.getElementById("pl-btn").addEventListener("click", async () => {
+      const email = document.getElementById("pl-email").value.trim();
+      const password = document.getElementById("pl-password").value;
+      const $err = document.getElementById("pl-error");
+      if (!email || !password) { $err.textContent = "メールアドレスとパスワードを入力してください。"; return; }
+      $err.textContent = "";
+      const { data, error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) { $err.textContent = "ログインできませんでした。メールアドレスとパスワードを確認してください。"; return; }
+      session = data.session;
+      render();
+    });
+  }
+
   // ---------- 描画 ----------
   async function render() {
+    if (useSupabase && !session) { showLogin(); return; }
     const [y, m] = $month.value.split("-").map(Number);
     if (!y || !m) return;
     $root.innerHTML = "<p style='text-align:center'>読み込み中…</p>";
@@ -125,6 +155,11 @@
     try {
       data = await fetchData(y, m);
     } catch (e) {
+      if (e && e.message === "EMPTY_STAFF") {
+        session = null;
+        showLogin();
+        return;
+      }
       $root.innerHTML = "<p style='text-align:center'>データの取得に失敗しました。通信環境を確認してください。</p>";
       return;
     }
@@ -185,5 +220,10 @@
       `</div>`;
   }
 
-  render();
+  (async () => {
+    if (sb) {
+      try { session = (await sb.auth.getSession()).data.session; } catch (e) { /* 未ログインとして扱う */ }
+    }
+    render();
+  })();
 })();
