@@ -593,3 +593,11 @@ body { background: #ECECEC; }
 .menu-title { font-size: 1.22rem; font-weight: 900; color: var(--ink); }
 .menu-desc { font-size: .92rem; color: var(--muted); line-height: 1.45; }
 .menu-arrow { flex: none; font-size: 1.6rem; font-weight: 700; color: var(--muted); }
+
+/* 月フォルダ */
+.sec-label { font-size: 1.05rem; font-weight: 900; color: var(--muted); margin: 20px 0 10px; }
+.folder-list { display: flex; flex-direction: column; gap: 10px; }
+.folder-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: #fff; border: 2px solid #111; border-radius: 14px; padding: 15px 14px; cursor: pointer; }
+.folder-ico { font-size: 1.1rem; font-weight: 900; }
+.folder-name { font-size: 1.15rem; font-weight: 900; color: var(--ink); }
+.folder-sub { margin-left: auto; font-size: .9rem; color: var(--muted); font-weight: 700; }

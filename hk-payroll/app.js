@@ -456,14 +456,26 @@ period: `${y}年${m + 1}月1日〜${m + 1}月${new Date(y, m + 1, 0).getDate()}�
 let ME = null; // 自分の staff レコード
 let STAFF = []; // 全スタッフ（kiosk行は除く）
 
-// ---------- 画面切り替え（ホーム⇔各画面） ----------
-function showMainView(name) {
+// ---------- 画面切り替え（戻るボタンは前の画面へ） ----------
+let curView = "home";
+const navStack = [];
+function activateView(name) {
+curView = name;
 document.querySelectorAll("#app-shell .view").forEach((v) =>
 v.classList.toggle("active", v.id === "view-" + name));
 window.scrollTo(0, 0);
 }
+function showMainView(name) {
+if (name !== curView) navStack.push(curView);
+activateView(name);
+}
+function goBack() {
+activateView(navStack.pop() || "home");
+}
 document.querySelectorAll("[data-go]").forEach((b) =>
-b.addEventListener("click", () => showMainView(b.dataset.go)));
+b.addEventListener("click", () => { navStack.length = 0; activateView("home"); if (b.dataset.go !== "home") showMainView(b.dataset.go); }));
+document.querySelectorAll(".back-btn").forEach((b) =>
+b.addEventListener("click", goBack));
 
 async function enterApp() {
 STAFF = (await DB.listStaff()).filter((s) => s.role!== "kiosk");
@@ -481,7 +493,8 @@ await renderAll();
 await renderHistory();
 await renderSettings();
 await refreshHistSide();
-showMainView("home");
+navStack.length = 0;
+activateView("home");
 }
 function showBlocked() {
 // 管理者以外には中身を一切出さない
@@ -1119,10 +1132,11 @@ $("hist-next").addEventListener("click", async () => { shiftHist(1); await rende
 let histAll = [];
 const normName = (n) => (n || "").replace(/\s/g, "");
 async function refreshHistSide() {
-if (DEMO) { $("people-card").style.display = "none"; $("summary-card").style.display = "none"; document.querySelectorAll(".real-only").forEach((el) => { el.style.display = "none"; }); return; }
+if (DEMO) { $("people-card").style.display = "none"; $("summary-card").style.display = "none"; document.querySelectorAll(".real-only").forEach((el) => { el.style.display = "none"; }); renderMonths(); return; }
 histAll = await DB.listPayrollHistoryAll();
 renderPeople();
 renderSummary();
+renderMonths();
 }
 function peopleIndex() {
 const map = new Map();
@@ -1253,7 +1267,7 @@ if (idx >= 0) { showMainView("settings"); renderSettingsForm(idx); }
 $("person-close").addEventListener("click", () => { $("person-detail").innerHTML = ""; });
 $("person-detail").scrollIntoView({ behavior: "smooth", block: "start" });
 }
-function renderSummary() {
+function histByMonth() {
 const byMonth = new Map();
 histAll.forEach((r) => {
 const k = r.month.slice(0, 7);
@@ -1261,6 +1275,48 @@ if (!byMonth.has(k)) byMonth.set(k, { count: 0, gross: 0, ded: 0, net: 0 });
 const o = byMonth.get(k);
 o.count++; o.gross += r.gross; o.ded += r.ded_total; o.net += r.net;
 });
+return byMonth;
+}
+function renderMonths() {
+const now = new Date();
+const endY = now.getFullYear(), endM = now.getMonth() + 1; // 来月まで
+const calc = [];
+let y = 2026, m = 10; // 2026年11月から
+while (y < endY || (y === endY && m <= endM)) {
+calc.push([y, m]);
+m++; if (m > 11) { m = 0; y++; }
+}
+calc.reverse();
+$("months-calc").innerHTML = calc.map(([yy, mm]) =>
+`<button type="button" class="folder-row" data-calc-y="${yy}" data-calc-m="${mm}">
+<span class="folder-ico">▸</span><span class="folder-name">${yy}年${mm + 1}月分</span>
+<span class="folder-sub">計算</span><span class="menu-arrow">›</span></button>`).join("");
+$("months-calc").querySelectorAll("[data-calc-y]").forEach((b) =>
+b.addEventListener("click", async () => {
+view.y = Number(b.dataset.calcY); view.m = Number(b.dataset.calcM);
+await renderAll();
+showMainView("payroll");
+}));
+const byMonth = histByMonth();
+const keys = [...byMonth.keys()].sort().reverse();
+$("months-done").innerHTML = keys.map((k) => {
+const o = byMonth.get(k);
+return `<button type="button" class="folder-row" data-done-k="${k}">
+<span class="folder-ico">▸</span><span class="folder-name">${k.slice(0, 4)}年${Number(k.slice(5, 7))}月分</span>
+<span class="folder-sub">${o.count}件／差引 ${fmtYen(o.net)}</span><span class="menu-arrow">›</span></button>`;
+}).join("") || `<p class="hint">まだありません。</p>`;
+$("months-done").querySelectorAll("[data-done-k]").forEach((b) =>
+b.addEventListener("click", async () => {
+const [yy, mm] = b.dataset.doneK.split("-").map(Number);
+hist.y = yy; hist.m = mm - 1;
+await renderHistory();
+showMainView("history");
+}));
+}
+$("btn-months-manual").addEventListener("click", () => showMainView("manual"));
+
+function renderSummary() {
+const byMonth = histByMonth();
 const keys = [...byMonth.keys()].sort().reverse();
 const tG = histAll.reduce((a, r) => a + r.gross, 0), tD = histAll.reduce((a, r) => a + r.ded_total, 0), tN = histAll.reduce((a, r) => a + r.net, 0);
 $("summary-body").innerHTML =
@@ -1672,7 +1728,8 @@ const [yy, mm] = monthVal.split("-").map(Number);
 hist.y = yy; hist.m = mm - 1;
 await renderHistory();
 await refreshHistSide();
-showMainView("history");
+navStack.length = 0; navStack.push("home", "months");
+activateView("history");
 });
 $("manual-form").scrollIntoView({ behavior: "smooth", block: "start" });
 }
