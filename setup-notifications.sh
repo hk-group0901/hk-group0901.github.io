@@ -506,6 +506,50 @@ Deno.serve(async (req) => {
 });
 EOF_CR_DECIDED
 
+mkdir -p "$(dirname supabase/functions/deadline-reminders/index.ts)"
+cat > supabase/functions/deadline-reminders/index.ts <<'EOF_DR'
+// ============================================================
+// シフト希望の締切リマインドを、未提出スタッフへ送る
+// 起動経路: pg_cron（毎日 10:00 JST）→
+//   public.karamenya_run_deadline_reminders() が対象者を集めて
+//   net.http_post で直接 invoke する。
+//   body = { staff_ids: string[], day: number }
+//   （day は Asia/Tokyo の日。15〜23日の期間だけ SQL 側が呼び出す）
+// 認証: x-webhook-secret ヘッダー必須（isAuthorized で検証）。
+// ============================================================
+import {
+  adminClient, notifyStaff, isAuthorized, jsonResponse, corsHeaders,
+} from "../_shared/notify.ts";
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (!isAuthorized(req)) return jsonResponse({ error: "unauthorized" }, 401);
+
+  const body = await req.json().catch(() => ({}));
+  const staffIds: string[] = Array.isArray(body.staff_ids) ? body.staff_ids : [];
+  const day = Number(body.day);
+  if (!staffIds.length) return jsonResponse({ ok: true, sent: 0 });
+  if (!Number.isFinite(day)) return jsonResponse({ error: "day required" }, 400);
+
+  const sb = adminClient();
+  const text = day <= 20
+    ? "来月のシフト希望がまだ出ていません。締切は毎月20日です。アプリの「希望提出」から出してください。"
+    : "来月のシフト希望がまだ出ていません。締切（20日）を過ぎています。早めに提出してください。";
+
+  let sent = 0;
+  for (const staffId of staffIds) {
+    await notifyStaff(sb, staffId, {
+      type: "reminder",
+      title: "シフト希望の締切のお知らせ",
+      body: text,
+    });
+    sent++;
+  }
+
+  return jsonResponse({ ok: true, sent });
+});
+EOF_DR
+
 printf 'project_id = "karamenya-staff"\n' > supabase/config.toml
 
 echo "=== 2) Generating VAPID keys and webhook secret ==="
@@ -538,7 +582,7 @@ supabase secrets set \
   "VAPID_KEYS_JSON=$(cat /tmp/vapid_keys.json)" \
   "VAPID_SUBJECT=mailto:h.kgroup0901@gmail.com" \
   "WEBHOOK_SECRET=$(cat /tmp/webhook_secret.txt)" --yes
-for f in work-request-created work-request-answered shifts-confirmed correction-request-created correction-request-decided; do
+for f in work-request-created work-request-answered shifts-confirmed correction-request-created correction-request-decided deadline-reminders; do
   supabase functions deploy "$f" --no-verify-jwt --yes
 done
 
@@ -625,6 +669,103 @@ out = run_sql("""
 """, "verify triggers")
 print("webhook triggers now:", out)
 EOF_PY
+
+echo "=== 4b) Setting up deadline reminders (pg_cron) ==="
+python3 <<'EOF_PY2'
+import json, os, urllib.request, urllib.error
+
+ref = "wdbkdwhtocbdaufxufqs"
+token = os.environ["SUPABASE_ACCESS_TOKEN"]
+with open("/tmp/webhook_secret.txt") as fh:
+    secret = fh.read().strip()
+
+def run_sql(sql, label):
+    req = urllib.request.Request(
+        f"https://api.supabase.com/v1/projects/{ref}/database/query",
+        data=json.dumps({"query": sql}).encode(),
+        headers={"Authorization": f"Bearer {token}",
+                 "Content-Type": "application/json"},
+        method="POST")
+    try:
+        with urllib.request.urlopen(req) as res:
+            return res.read().decode()
+    except urllib.error.HTTPError as e:
+        raise SystemExit(f"SQL failed at {label}: HTTP {e.code}")
+
+# pg_cron を有効化（締切リマインドの定期実行の土台）
+run_sql("CREATE EXTENSION IF NOT EXISTS pg_cron;", "pg_cron")
+print("pg_cron ready")
+
+# リマインド実行用の SQL 関数。
+# Asia/Tokyo の日が 15〜23 のときだけ、来月分のシフト希望が未提出の
+# 時給制スタッフ（在籍中・role='staff'）を集めて deadline-reminders を呼ぶ。
+func_sql = """
+CREATE OR REPLACE FUNCTION public.karamenya_run_deadline_reminders()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn$
+DECLARE
+  jst_now timestamp := (now() AT TIME ZONE 'Asia/Tokyo');
+  dom int := EXTRACT(DAY FROM jst_now)::int;
+  next_month date := (date_trunc('month', jst_now) + interval '1 month')::date;
+  ids uuid[];
+  req_id bigint;
+BEGIN
+  -- 締切（毎月20日）の前後だけ送る: 15日〜23日
+  IF dom < 15 OR dom > 23 THEN
+    RETURN;
+  END IF;
+  -- 対象: 在籍中・通常スタッフ・時給制で、来月分の希望が1件も無い人
+  SELECT array_agg(s.id) INTO ids
+  FROM public.staff s
+  WHERE s.active = true
+    AND s.role = 'staff'
+    AND s.pay_type <> 'salary'
+    AND NOT EXISTS (
+      SELECT 1 FROM public.shift_requests r
+      WHERE r.staff_id = s.id
+        AND r.date >= next_month
+        AND r.date < (next_month + interval '1 month')::date
+    );
+  IF ids IS NULL THEN
+    RETURN;
+  END IF;
+  SELECT net.http_post(
+    url := 'https://wdbkdwhtocbdaufxufqs.supabase.co/functions/v1/deadline-reminders',
+    body := jsonb_build_object(
+      'staff_ids', to_jsonb(ids),
+      'day', dom),
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'x-webhook-secret', '__WEBHOOK_SECRET__'),
+    timeout_milliseconds := 5000
+  ) INTO req_id;
+END;
+$fn$;
+""".replace("__WEBHOOK_SECRET__", secret)
+run_sql(func_sql, "reminder function")
+print("reminder function ready")
+
+# 既存ジョブを消してから登録し直す（冪等）
+run_sql("""
+  SELECT cron.unschedule(jobname) FROM cron.job
+  WHERE jobname = 'deadline-reminders';
+""", "cron unschedule")
+run_sql("""
+  SELECT cron.schedule(
+    'deadline-reminders', '0 1 * * *',
+    $$SELECT public.karamenya_run_deadline_reminders();$$);
+""", "cron schedule")
+print("cron job scheduled: deadline-reminders (0 1 * * * UTC = 10:00 JST)")
+
+out = run_sql("""
+  SELECT jobname, schedule, active FROM cron.job
+  WHERE jobname = 'deadline-reminders';
+""", "verify cron")
+print("cron job now:", out)
+EOF_PY2
 
 echo "=== 5) Verifying deployed functions ==="
 curl -s -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
