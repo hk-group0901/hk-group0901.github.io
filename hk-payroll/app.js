@@ -1159,12 +1159,18 @@ return b.latest.localeCompare(a.latest);
 });
 return arr;
 }
+// 実績のみに名前がある人のうち、現役と分かっている人（神坂さん確認 2026-11-28）
+const CURRENT_EXTRA = { "野々口隼斗": "現役（BAR・週末）", "野々口隼人": "現役（BAR・週末）", "黒崎海斗": "現役（BAR・週末）", "黒崎かいと": "現役（BAR・週末）" };
+function personBadge(p) {
+if (p.staff) return p.staff.active === false? "退職": "在籍中";
+return CURRENT_EXTRA[normName(p.name)] || "過去のスタッフ";
+}
 function renderPeople() {
 const arr = peopleIndex();
 $("people-list").innerHTML = arr.map((p, i) => {
 const last = p.rows[0];
 return `<button type="button" class="adm-pay-row" data-people-idx="${i}">
-<span><span class="pname">${esc(p.name)}</span> <span class="badge-mini">${p.staff? "在籍中": "過去のスタッフ"}</span><br>
+<span><span class="pname">${esc(p.name)}</span> <span class="badge-mini">${personBadge(p)}</span><br>
 <span class="adm-pay-sub">${p.rows.length? `明細 ${p.rows.length}件／直近 ${p.latest.slice(0, 4)}年${Number(p.latest.slice(5, 7))}月 差引 ${fmtYen(last? last.net: 0)}`: "過去の明細なし"}</span></span>
 <span class="pnet" style="font-size:1rem;color:var(--ink)">›</span>
 </button>`;
@@ -1219,7 +1225,7 @@ const rows = [...p.rows].sort((a, b) => b.month.localeCompare(a.month));
 const tG = rows.reduce((a, r) => a + r.gross, 0), tD = rows.reduce((a, r) => a + r.ded_total, 0), tN = rows.reduce((a, r) => a + r.net, 0);
 $("person-detail").innerHTML = `
 <div class="card" style="margin-top:16px">
-<h2>${esc(p.name)} <span class="badge-mini">${p.staff? "在籍中": "過去のスタッフ"}</span></h2>
+<h2>${esc(p.name)} <span class="badge-mini">${personBadge(p)}</span></h2>
 ${p.staff? `<p class="hint">${esc(p.staff.shop_name || "")}${p.staff.employment_type? `／${esc(p.staff.employment_type)}`: ""}${p.staff.position_title? `／${esc(p.staff.position_title)}`: ""}／入社日：${p.staff.hire_date || "未登録"}${p.staff.retire_date? `／退職日：${p.staff.retire_date}`: ""}${p.staff.job_type? `／${esc(p.staff.job_type)}`: ""}${p.staff.profile_note? `／${esc(p.staff.profile_note)}`: ""}</p>`: ""}
 <div class="pay-totals">
 <div class="t-row"><span>期間の支給合計（${rows.length}件）</span><span>${fmtYen(tG)}</span></div>
