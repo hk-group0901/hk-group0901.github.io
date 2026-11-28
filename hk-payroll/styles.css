@@ -568,3 +568,15 @@ body { background: #ECECEC; }
 #view-login .demo-badge { background: #26262A; color: #FFD34D; border: 1px solid #4A4A4C; }
 .toast { background: #111; color: #fff; border-radius: 999px; }
 .logout-row button { color: #888; }
+
+/* 過去実績の月送り */
+.hist-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+
+/* 設定・手入力フォーム */
+.form-h { font-size: 1.02rem; font-weight: 900; margin: 18px 0 8px; border-left: 6px solid #111; padding-left: 10px; }
+.chk-row { display: flex; align-items: center; gap: 10px; font-weight: 700; margin: 10px 0; }
+.chk-row input { width: 24px; height: 24px; accent-color: #111; }
+.hm-row { display: flex; align-items: center; gap: 8px; }
+.hm-row input { flex: 1; min-height: 52px; border-radius: 10px; border: 2px solid #C9C9C9; font-size: 1.05rem; padding: 0 12px; }
+
+.badge-mini { display: inline-block; font-size: .72rem; font-weight: 800; border: 1.5px solid #111; border-radius: 999px; padding: 1px 8px; vertical-align: middle; }
