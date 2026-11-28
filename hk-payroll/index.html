@@ -113,6 +113,57 @@
       <button class="btn-primary" id="btn-sales-save" type="button">売上を登録する</button>
     </div>
 
+    <!-- 過去の給与実績 -->
+    <div class="card" id="hist-card">
+      <h2>過去の給与実績</h2>
+      <div class="hist-head">
+        <button class="btn-nav" id="hist-prev" aria-label="前の月">‹</button>
+        <div class="month-title" id="hist-month-title"></div>
+        <button class="btn-nav" id="hist-next" aria-label="次の月">›</button>
+      </div>
+      <div id="hist-list"></div>
+      <div class="pay-totals" id="hist-totals"></div>
+      <div class="pay-actions">
+        <button class="btn-share" id="btn-hist-csv" type="button">税理士用CSVを出す</button>
+        <button class="btn-share alt" id="btn-hist-copy" type="button">全員分をコピー</button>
+      </div>
+      <button class="btn-ghost" id="btn-hist-share" type="button" style="width:100%">全員分を共有する</button>
+      <button class="btn-ghost" id="btn-hist-printall" type="button" style="width:100%;margin-top:10px">明細書を全員分まとめて印刷・PDF</button>
+      <p class="hint" style="margin-top:10px">以前の給料アプリに残っていた確定済みの明細です（2025年8月分〜2026年10月分）。退職したスタッフの分も含まれます。行をタップすると内訳が見られます。</p>
+    </div>
+    <div id="hist-detail"></div>
+
+    <!-- 従業員 -->
+    <div class="card" id="people-card">
+      <h2>従業員</h2>
+      <p class="hint">名前をタップすると、その人の月ごとの明細（賃金台帳）と期間合計が見られます。在籍中の人は設定も開けます。</p>
+      <div id="people-list"></div>
+      <div id="person-detail"></div>
+    </div>
+
+    <!-- 給料の合計 -->
+    <div class="card" id="summary-card">
+      <h2>給料の合計</h2>
+      <p class="hint">過去の給与実績の月ごとの合計と、全期間の合計です。</p>
+      <div id="summary-body"></div>
+    </div>
+
+    <!-- 手入力 -->
+    <div class="card" id="manual-card">
+      <h2>明細の手入力</h2>
+      <p class="hint">自動計算の対象外の人や、確定した金額をそのまま残したいときに使います。保存すると「過去の給与実績」に追加されます。</p>
+      <button class="btn-primary" id="btn-manual-open" type="button" style="width:100%;margin-top:10px">手入力で明細を追加する</button>
+      <div id="manual-form"></div>
+    </div>
+
+    <!-- スタッフ設定 -->
+    <div class="card" id="settings-card">
+      <h2>スタッフ設定</h2>
+      <p class="hint">1人ずつのプロフィール（採用日など）と給与設定（時給・手当・社会保険など）を変更できます。行をタップすると設定が開きます。</p>
+      <div id="staff-settings-list"></div>
+      <div id="staff-settings-form"></div>
+    </div>
+
     <div class="logout-row"><button id="btn-logout" type="button">ログアウト</button></div>
   </section>
 </div>
