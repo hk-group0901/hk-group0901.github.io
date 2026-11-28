@@ -12,7 +12,7 @@ window.APP_CONFIG = {
   SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkYmtkd2h0b2NiZGF1Znh1ZnFzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU3OTM0NzYsImV4cCI6MjExMTM2OTQ3Nn0.rm6OkozblAMwbzm872VspZaaI_5dXRV6i0fzkjdHzYc",
 
   // Web Push（VAPID）公開鍵。サーバー側で生成したものを設定します。
-  VAPID_PUBLIC_KEY: "",    // ← プレースホルダ
+  VAPID_PUBLIC_KEY: "BMoye0iQaN0CEoAUhdvwtBsb1qgbJ5_aF3VRTFguFph9t1dht0d__WtqTWuV-eP5TUhdXZOQtjHQdoZH3xMuGs",
 
   // 店舗の基本情報
   SHOP: {

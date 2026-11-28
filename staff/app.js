@@ -1022,7 +1022,8 @@ order: st && st.sort_order != null? st.sort_order: 99});
 });
 notYet.sort((a, b) => a.min - b.min || a.order - b.order);
 $("ah-notyet").innerHTML = notYet.length
-? `本日シフトあり・まだ未出勤：${notYet.map((x) => `${esc(x.name)}（${x.start}〜）`).join("、")}`
+? `<div class="notyet-title">本日シフトあり・まだ未出勤</div>` +
+notYet.map((x) => `<div class="notyet-row"><span class="notyet-time">${x.start}〜</span><span class="notyet-name">${esc(x.name)}</span></div>`).join("")
 : "";
 renderAdminBoard(records);
 }
@@ -1316,6 +1317,8 @@ renderRequest();
 // シフト確認
 // ============================================================
 const schState = { y: new Date().getFullYear(), m: new Date().getMonth()};
+// 月カレンダーの人数チップ用・短い区分表記（管理者用アプリの表記に合わせる）
+const BAND_SHORT = { lunch: "昼", dinner: "D", late: "深夜"};
 async function renderSchedule() {
 const { y, m} = schState;
 $("sch-month-title").textContent = `${y}年${m + 1}月`;
@@ -1330,17 +1333,29 @@ const ds = fmtDate(date);
 const closed = date.getDay() === CFG.SHOP.closedWeekday;
 const dayShifts = byDate.get(ds) || [];
 const tags = ["lunch", "dinner", "late"].map((b) => {
-const names = dayShifts.filter((s) => s.band === b).map((s) => staffShort(s.staff_id));
-if (!names.length) return "";
+// 月カレンダーには名前を出さず、区分ごとの人数チップだけ出す。
+// 名前と時間は、日をタップしたときの日別詳細（下のカード）で見る。
+const count = dayShifts.filter((s) => s.band === b).length;
+if (!count) return "";
 const mine = dayShifts.some((s) => s.band === b && s.staff_id === ME.id)? " mine": "";
-return `<span class="tag ${b}${mine}">${BAND[b].label[0]}：${names.join("・")}</span>`;
+return `<span class="tag ${b}${mine}">${BAND_SHORT[b]}${count}</span>`;
 }).join("");
 const dowCls = date.getDay() === 0? " sun": date.getDay() === 6? " sat": "";
 return `<button class="cal-day${closed? " closed": ""}${ds === fmtDate(new Date())? " today": ""}${dowCls}" data-date="${ds}">
 <span class="dnum">${d}</span>${closed? '<span class="tag">定休日</span>': tags}</button>`;
 }, (ds) => renderDayDetail(ds, byDate.get(ds) || []));
+// 既定表示：今月を表示しているときは、タップしなくても今日の名前・時間が
+// 見えるよう、日別詳細に今日を出しておく（自動ではスクロールしない）。
+// ほかの月では、前の月の詳細が残らないようカードを閉じる。
+const nowD = new Date();
+if (y === nowD.getFullYear() && m === nowD.getMonth()) {
+const todayDs = fmtDate(nowD);
+renderDayDetail(todayDs, byDate.get(todayDs) || [], false);
+} else {
+$("day-detail-card").style.display = "none";
 }
-function renderDayDetail(ds, dayShifts) {
+}
+function renderDayDetail(ds, dayShifts, scroll = true) {
 const date = new Date(ds);
 $("day-detail-card").style.display = "block";
 $("day-detail-title").textContent =
@@ -1358,7 +1373,7 @@ return `<div class="bar ${x.band}" style="left:${left}%;width:${width}%"><span c
 return `<tr${s.id === ME.id? ' class="me"': ""}><td class="name">${esc(s.name)}</td><td><div class="bar-cell">${bars}</div></td></tr>`;
 }).join("");
 $("day-detail").innerHTML = `<table>${rows}</table>`;
-$("day-detail-card").scrollIntoView({ behavior: "smooth", block: "start"});
+if (scroll) $("day-detail-card").scrollIntoView({ behavior: "smooth", block: "start"});
 }
 $("sch-prev").addEventListener("click", () => { shiftMonth(schState, -1); renderSchedule();});
 $("sch-next").addEventListener("click", () => { shiftMonth(schState, 1); renderSchedule();});
