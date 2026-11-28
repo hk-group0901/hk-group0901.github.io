@@ -208,6 +208,55 @@ return r? r.sales: null;
 const { data} = await sb.from("monthly_sales").select("sales").eq("month", monthStr).maybeSingle();
 return data? data.sales: null;
 },
+async listPendingImports() {
+const { data } = await sb.from("profile_imports").select("*").eq("used", false).order("created_at", { ascending: false });
+return data || [];
+},
+async markImportUsed(id) {
+const { error } = await sb.from("profile_imports").update({ used: true }).eq("id", id);
+return error || null;
+},
+async getStaffPrivate(staffId) {
+const { data } = await sb.from("staff_private").select("*").eq("staff_id", staffId).maybeSingle();
+return data || null;
+},
+async upsertStaffPrivate(staffId, myNumber) {
+const { error } = await sb.from("staff_private").upsert({ staff_id: staffId, my_number: myNumber, updated_at: new Date().toISOString() }, { onConflict: "staff_id" });
+return error || null;
+},
+async listAllStaff() {
+if (DEMO) return demoDB.staff.slice();
+const { data } = await sb.from("staff").select("*").order("sort_order");
+return data || [];
+},
+async updateStaff(id, fields) {
+if (DEMO) { const s = demoDB.staff.find((x) => x.id === id); if (s) Object.assign(s, fields); saveDemo(); return null; }
+const { error } = await sb.from("staff").update(fields).eq("id", id);
+return error || null;
+},
+async insertPayrollHistory(row) {
+const { error } = await sb.from("payroll_history").insert(row);
+return error || null;
+},
+async updatePayrollHistory(id, row) {
+const { error } = await sb.from("payroll_history").update(row).eq("id", id);
+return error || null;
+},
+async listPayrollHistoryAll() {
+const { data } = await sb.from("payroll_history").select("*").order("month", { ascending: false }).order("name");
+return data || [];
+},
+async deletePayrollHistory(id) {
+const { error } = await sb.from("payroll_history").delete().eq("id", id);
+return error || null;
+},
+async listPayrollHistory(y, m) {
+// 過去の給与実績（以前の給料アプリから取り込んだ確定値）。payroll_history テーブル
+if (DEMO) return [];
+const monthStr = `${y}-${pad(m + 1)}-01`;
+const { data } = await sb.from("payroll_history").select("*").eq("month", monthStr).order("net", { ascending: false });
+return data || [];
+},
 async setMonthlySales(y, m, sales) {
 // 月売上の登録・更新（ノルマ判定の元データ）
 const monthStr = `${y}-${pad(m + 1)}-01`;
@@ -420,6 +469,9 @@ const greet = now.getHours() < 11? "おはようございます": now.getHours()
 $("hello-name").textContent = `${greet}、${ME.name}さん`;
 $("hello-date").textContent = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日（${DOW[now.getDay()]}）`;
 await renderAll();
+await renderHistory();
+await renderSettings();
+await refreshHistSide();
 }
 function showBlocked() {
 // 管理者以外には中身を一切出さない
@@ -846,6 +898,774 @@ await renderQuota();
 await renderPayrolls(); // ノルマ判定が変わるため給与一覧も更新する
 await renderSales();
 });
+
+// ============================================================
+// 過去の給与実績（取り込み済みの確定明細）
+// ============================================================
+const hist = { y: 2026, m: 9 }; // 取り込み最終月（2026年10月）から表示
+let histRows = [];
+async function renderHistory() {
+const card = $("hist-card");
+if (DEMO) { card.style.display = "none"; return; }
+$("hist-month-title").textContent = `${hist.y}年${hist.m + 1}月分`;
+histRows = await DB.listPayrollHistory(hist.y, hist.m);
+$("hist-detail").innerHTML = "";
+if (!histRows.length) {
+$("hist-list").innerHTML = `<p class="hint">この月の実績データはありません。</p>`;
+$("hist-totals").innerHTML = "";
+return;
+}
+$("hist-list").innerHTML = histRows.map((r, i) =>
+`<button type="button" class="adm-pay-row" data-hist-idx="${i}">
+<span><span class="pname">${esc(r.name)}</span><br>
+<span class="adm-pay-sub">${esc(r.shop || "")}／支給 ${fmtYen(r.gross)}／控除 ${fmtYen(r.ded_total)}</span></span>
+<span class="pnet">${fmtYen(r.net)}</span>
+</button>`).join("");
+$("hist-list").querySelectorAll("[data-hist-idx]").forEach((b) =>
+b.addEventListener("click", () => renderHistDetail(Number(b.dataset.histIdx))));
+const tG = histRows.reduce((a, r) => a + r.gross, 0);
+const tD = histRows.reduce((a, r) => a + r.ded_total, 0);
+const tN = histRows.reduce((a, r) => a + r.net, 0);
+$("hist-totals").innerHTML =
+`<div class="t-row"><span>支給合計（全員）</span><span>${fmtYen(tG)}</span></div>` +
+`<div class="t-row"><span>控除合計（全員）</span><span>${fmtYen(tD)}</span></div>` +
+`<div class="t-row t-net"><span>差引支給額（全員）</span><span>${fmtYen(tN)}</span></div>`;
+}
+function histTextFor(r) {
+const L = [];
+L.push(`給料支払明細書（${hist.y}年${hist.m + 1}月分）`);
+L.push(`${r.name} 殿`);
+L.push("");
+L.push(`労働日数：${r.days == null? "―": `${r.days}日`}／労働時間：${r.work_min == null? "―": fmtHM(r.work_min)}／所定時間外労働：${r.ot_min == null? "―": fmtHM(r.ot_min)}`);
+L.push("");
+Object.entries(r.pay || {}).forEach(([k, v]) => L.push(`${k}：${fmtYen(v)}`));
+L.push(`支給合計：${fmtYen(r.gross)}`);
+L.push("");
+Object.entries(r.ded || {}).forEach(([k, v]) => L.push(`${k}：${fmtYen(v)}`));
+L.push(`控除合計：${fmtYen(r.ded_total)}`);
+L.push(`差引支給額：${fmtYen(r.net)}`);
+L.push(`備考：所属 ${r.shop || "―"}${r.note? `／${r.note}`: ""}`);
+L.push("株式会社H&Kグループ");
+return L.join("\n");
+}
+function printHistSlip(r) {
+const w = window.open("", "_blank");
+if (!w) { toast("ポップアップがブロックされました"); return; }
+const trs = (obj, totalLabel, total) =>
+Object.entries(obj || {}).map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num">${fmtYen(v)}</td></tr>`).join("") +
+`<tr class="total"><td>${totalLabel}</td><td class="num">${fmtYen(total)}</td></tr>`;
+const lastDay = new Date(hist.y, hist.m + 1, 0).getDate();
+w.document.write(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<title>給料支払明細書</title><style>
+@page{size:A4 portrait;margin:14mm}
+body{font-family:"Hiragino Sans","Noto Sans JP",sans-serif;color:#222;font-size:13px}
+h1{font-size:19px;text-align:center;margin:0 0 4px}
+.name{font-size:15px;font-weight:700;margin:10px 0}
+table{width:100%;border-collapse:collapse;margin:8px 0 14px}
+th,td{border:1px solid #888;padding:5px 8px}
+th{background:#F2F2F2;text-align:left}
+td.num{text-align:right}
+tr.total td{font-weight:800;background:#F2F2F2}
+h2{font-size:14px;margin:14px 0 4px;border-left:5px solid #111;padding-left:8px}
+.net{text-align:center;border:2px solid #222;padding:12px;margin:16px 0}
+.net .amt{font-size:26px;font-weight:900}
+.foot{text-align:right;margin-top:24px;font-weight:700}
+</style></head><body>
+<h1>給料支払明細書（${hist.y}年${hist.m + 1}月分）</h1>
+<div class="name">${esc(r.name)} 殿</div>
+<h2>勤怠</h2>
+<table>
+<tr><th>労働期間</th><td>${hist.y}年${hist.m + 1}月1日 ～ ${hist.y}年${hist.m + 1}月${lastDay}日</td><th>労働日数</th><td>${r.days == null? "―": `${r.days}日`}</td></tr>
+<tr><th>労働時間</th><td>${r.work_min == null? "―": fmtHM(r.work_min)}</td><th>所定時間外労働</th><td>${r.ot_min == null? "―": fmtHM(r.ot_min)}</td></tr>
+</table>
+<h2>支給額</h2>
+<table>${trs(r.pay, "支給合計", r.gross)}</table>
+<h2>控除額</h2>
+<table>${trs(r.ded, "控除合計", r.ded_total)}</table>
+<div class="net">差引支給額　<span class="amt">${fmtYen(r.net)}</span></div>
+<div>備考：所属 ${esc(r.shop || "―")}${r.note? `／${esc(r.note)}`: ""}</div>
+<div class="foot">株式会社H&Kグループ</div>
+<script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script>
+</body></html>`);
+w.document.close();
+}
+async function shareText(title, text) {
+if (navigator.share) {
+try { await navigator.share({ title, text }); } catch (e) { /* キャンセル時は何もしない */ }
+} else {
+try { await navigator.clipboard.writeText(text); toast("共有機能がないためコピーしました"); }
+catch (e) { toast("共有できませんでした"); }
+}
+}
+function buildHistCsv() {
+const payLabels = [], dedLabels = [];
+histRows.forEach((r) => {
+Object.keys(r.pay || {}).forEach((k) => { if (!payLabels.includes(k)) payLabels.push(k); });
+Object.keys(r.ded || {}).forEach((k) => { if (!dedLabels.includes(k)) dedLabels.push(k); });
+});
+const cols = ["氏名", "所属", "労働日数", "労働時間", "所定時間外労働",
+...payLabels.map((k) => `支給:${k}`), "支給合計", ...dedLabels.map((k) => `控除:${k}`), "控除合計", "差引支給額", "備考"];
+const escCsv = (v) => `"${String(v == null? "": v).replace(/"/g, '""')}"`;
+const lines = [cols.join(",")];
+histRows.forEach((r) => {
+const row = [r.name, r.shop || "", r.days == null? "": r.days, r.work_min == null? "": fmtHM(r.work_min), r.ot_min == null? "": fmtHM(r.ot_min),
+...payLabels.map((k) => (r.pay || {})[k] == null? "": (r.pay || {})[k]), r.gross,
+...dedLabels.map((k) => (r.ded || {})[k] == null? "": (r.ded || {})[k]), r.ded_total, r.net, r.note || ""];
+lines.push(row.map(escCsv).join(","));
+});
+return lines.join("\r\n");
+}
+$("btn-hist-csv").addEventListener("click", () => {
+if (!histRows.length) { toast("この月の実績がありません"); return; }
+const blob = new Blob(["\uFEFF" + buildHistCsv()], { type: "text/csv;charset=utf-8" });
+const a = document.createElement("a");
+a.href = URL.createObjectURL(blob);
+a.download = `給与実績_${hist.y}年${hist.m + 1}月分.csv`;
+a.click();
+URL.revokeObjectURL(a.href);
+toast("CSVを出しました");
+});
+$("btn-hist-copy").addEventListener("click", async () => {
+if (!histRows.length) { toast("この月の実績がありません"); return; }
+const text = histRows.map((r) => histTextFor(r)).join("\n\n--------------------\n\n");
+try { await navigator.clipboard.writeText(text); toast("全員分をコピーしました"); }
+catch (e) { toast("コピーできませんでした"); }
+});
+$("btn-hist-share").addEventListener("click", async () => {
+if (!histRows.length) { toast("この月の実績がありません"); return; }
+const text = histRows.map((r) => histTextFor(r)).join("\n\n--------------------\n\n");
+await shareText("給与実績", text);
+});
+
+function renderHistDetail(idx) {
+const r = histRows[idx];
+if (!r) return;
+const row = (label, val) => `<tr><td>${esc(label)}</td><td class="num">${esc(val)}</td></tr>`;
+const items = (obj) => Object.entries(obj || {}).map(([k, v]) => row(k, fmtYen(v))).join("");
+$("hist-detail").innerHTML = `
+<div class="card">
+<div style="text-align:center">
+<div style="font-size:1.2rem;font-weight:900">給料支払明細書（${hist.y}年${hist.m + 1}月分・実績）</div>
+<div style="font-size:1.05rem;font-weight:800;margin-top:4px">${esc(r.name)} 殿</div>
+<div style="font-size:1.3rem;font-weight:900;margin-top:8px">差引支給額 ${fmtYen(r.net)}</div>
+</div>
+<h2 style="margin-top:16px">勤怠</h2>
+<table class="pay-table">
+${row("労働日数", r.days == null? "―": `${r.days}日`)}
+${row("労働時間", r.work_min == null? "―": fmtHM(r.work_min))}
+${row("所定時間外労働", r.ot_min == null? "―": fmtHM(r.ot_min))}
+</table>
+<h2 style="margin-top:16px">支給額</h2>
+<table class="pay-table">
+${items(r.pay)}
+<tr class="total"><td>支給合計</td><td class="num">${fmtYen(r.gross)}</td></tr>
+</table>
+<h2 style="margin-top:16px">控除額</h2>
+<table class="pay-table">
+${items(r.ded)}
+<tr class="total"><td>控除合計</td><td class="num">${fmtYen(r.ded_total)}</td></tr>
+</table>
+${r.note? `<p class="hint" style="margin-top:10px">備考：${esc(r.note)}</p>`: ""}
+<div class="pay-actions">
+<button class="btn-share" id="hist-copy" type="button">明細をコピー</button>
+<button class="btn-share alt" id="hist-share" type="button">共有する</button>
+</div>
+<button class="btn-ghost" id="hist-print" type="button" style="width:100%">明細を印刷・PDFにする</button>
+<div class="pay-actions">
+<button class="btn-share" id="hist-edit" type="button">編集する</button>
+<button class="btn-share alt" id="hist-del" type="button">削除する</button>
+</div>
+<button class="btn-ghost" id="hist-close" type="button" style="width:100%;margin-top:12px">閉じる</button>
+</div>`;
+$("hist-close").addEventListener("click", () => { $("hist-detail").innerHTML = ""; });
+$("hist-copy").addEventListener("click", async () => {
+try { await navigator.clipboard.writeText(histTextFor(r)); toast("明細をコピーしました"); }
+catch (e) { toast("コピーできませんでした"); }
+});
+$("hist-share").addEventListener("click", () => shareText("給料支払明細書", histTextFor(r)));
+$("hist-print").addEventListener("click", () => printHistSlip(r));
+$("hist-edit").addEventListener("click", () => openManualForm(r));
+$("hist-del").addEventListener("click", async () => {
+if (!confirm(`${r.name}さんの${hist.y}年${hist.m + 1}月分の実績を削除しますか？`)) return;
+const err = await DB.deletePayrollHistory(r.id);
+if (err) { toast("削除できませんでした"); return; }
+toast("削除しました");
+await renderHistory();
+await refreshHistSide();
+});
+$("hist-detail").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function shiftHist(delta) {
+hist.m += delta;
+if (hist.m < 0) { hist.m = 11; hist.y--; }
+if (hist.m > 11) { hist.m = 0; hist.y++; }
+}
+$("hist-prev").addEventListener("click", async () => { shiftHist(-1); await renderHistory(); });
+$("hist-next").addEventListener("click", async () => { shiftHist(1); await renderHistory(); });
+
+// ============================================================
+// 従業員ページ・賃金台帳・給料の合計
+// ============================================================
+let histAll = [];
+const normName = (n) => (n || "").replace(/\s/g, "");
+async function refreshHistSide() {
+if (DEMO) { $("people-card").style.display = "none"; $("summary-card").style.display = "none"; return; }
+histAll = await DB.listPayrollHistoryAll();
+renderPeople();
+renderSummary();
+}
+function peopleIndex() {
+const map = new Map();
+(allStaff || []).forEach((s) => {
+if (s.role === "kiosk") return;
+map.set(normName(s.name), { key: normName(s.name), name: s.name, staff: s, rows: [], latest: "" });
+});
+histAll.forEach((r) => {
+const k = normName(r.name);
+if (!map.has(k)) map.set(k, { key: k, name: r.name, staff: null, rows: [], latest: "" });
+const p = map.get(k);
+p.rows.push(r);
+if (r.month > p.latest) { p.latest = r.month; p.name = p.staff? p.staff.name: r.name; }
+});
+const arr = [...map.values()];
+arr.sort((a, b) => {
+const ao = a.staff? a.staff.sort_order: 999, bo = b.staff? b.staff.sort_order: 999;
+if (ao !== bo) return ao - bo;
+return b.latest.localeCompare(a.latest);
+});
+return arr;
+}
+function renderPeople() {
+const arr = peopleIndex();
+$("people-list").innerHTML = arr.map((p, i) => {
+const last = p.rows[0];
+return `<button type="button" class="adm-pay-row" data-people-idx="${i}">
+<span><span class="pname">${esc(p.name)}</span> <span class="badge-mini">${p.staff? "在籍中": "過去のスタッフ"}</span><br>
+<span class="adm-pay-sub">${p.rows.length? `明細 ${p.rows.length}件／直近 ${p.latest.slice(0, 4)}年${Number(p.latest.slice(5, 7))}月 差引 ${fmtYen(last? last.net: 0)}`: "過去の明細なし"}</span></span>
+<span class="pnet" style="font-size:1rem;color:var(--ink)">›</span>
+</button>`;
+}).join("") || `<p class="hint">従業員がいません。</p>`;
+$("people-list").querySelectorAll("[data-people-idx]").forEach((b) =>
+b.addEventListener("click", () => renderPerson(arr[Number(b.dataset.peopleIdx)])));
+}
+function ledgerCsv(p) {
+const escCsv = (v) => `"${String(v == null? "": v).replace(/"/g, '""')}"`;
+const lines = [["氏名", "年月", "労働日数", "労働時間", "所定時間外労働", "支給合計", "控除合計", "差引支給額"].join(",")];
+[...p.rows].sort((a, b) => a.month.localeCompare(b.month)).forEach((r) => {
+lines.push([p.name, `${r.month.slice(0, 4)}年${Number(r.month.slice(5, 7))}月`, r.days == null? "": r.days,
+r.work_min == null? "": fmtHM(r.work_min), r.ot_min == null? "": fmtHM(r.ot_min), r.gross, r.ded_total, r.net].map(escCsv).join(","));
+});
+return lines.join("\r\n");
+}
+function printLedger(p) {
+const w = window.open("", "_blank");
+if (!w) { toast("ポップアップがブロックされました"); return; }
+const rows = [...p.rows].sort((a, b) => a.month.localeCompare(b.month));
+const trs = rows.map((r) =>
+`<tr><td>${r.month.slice(0, 4)}年${Number(r.month.slice(5, 7))}月</td><td class="num">${r.days == null? "―": `${r.days}日`}</td><td class="num">${r.work_min == null? "―": fmtHM(r.work_min)}</td><td class="num">${r.ot_min == null? "―": fmtHM(r.ot_min)}</td><td class="num">${fmtYen(r.gross)}</td><td class="num">${fmtYen(r.ded_total)}</td><td class="num">${fmtYen(r.net)}</td></tr>`).join("");
+const tG = rows.reduce((a, r) => a + r.gross, 0), tD = rows.reduce((a, r) => a + r.ded_total, 0), tN = rows.reduce((a, r) => a + r.net, 0);
+w.document.write(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<title>賃金台帳</title><style>
+@page{size:A4 landscape;margin:12mm}
+body{font-family:"Hiragino Sans","Noto Sans JP",sans-serif;color:#222;font-size:12px}
+h1{font-size:18px;text-align:center;margin:0 0 10px}
+.name{font-size:14px;font-weight:700;margin:8px 0}
+table{width:100%;border-collapse:collapse}
+th,td{border:1px solid #888;padding:5px 8px}
+th{background:#F2F2F2}
+td.num{text-align:right}
+tr.total td{font-weight:800;background:#F2F2F2}
+.foot{text-align:right;margin-top:20px;font-weight:700}
+</style></head><body>
+<h1>賃金台帳</h1>
+<div class="name">${esc(p.name)} 殿</div>
+<table>
+<tr><th>年月</th><th>労働日数</th><th>労働時間</th><th>所定時間外</th><th>支給合計</th><th>控除合計</th><th>差引支給額</th></tr>
+${trs}
+<tr class="total"><td>合計</td><td></td><td></td><td></td><td class="num">${fmtYen(tG)}</td><td class="num">${fmtYen(tD)}</td><td class="num">${fmtYen(tN)}</td></tr>
+</table>
+<div class="foot">株式会社H&Kグループ</div>
+<script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script>
+</body></html>`);
+w.document.close();
+}
+function renderPerson(p) {
+if (!p) return;
+const rows = [...p.rows].sort((a, b) => b.month.localeCompare(a.month));
+const tG = rows.reduce((a, r) => a + r.gross, 0), tD = rows.reduce((a, r) => a + r.ded_total, 0), tN = rows.reduce((a, r) => a + r.net, 0);
+$("person-detail").innerHTML = `
+<div class="card" style="margin-top:16px">
+<h2>${esc(p.name)} <span class="badge-mini">${p.staff? "在籍中": "過去のスタッフ"}</span></h2>
+${p.staff? `<p class="hint">${esc(p.staff.shop_name || "")}${p.staff.employment_type? `／${esc(p.staff.employment_type)}`: ""}${p.staff.position_title? `／${esc(p.staff.position_title)}`: ""}／入社日：${p.staff.hire_date || "未登録"}${p.staff.retire_date? `／退職日：${p.staff.retire_date}`: ""}${p.staff.job_type? `／${esc(p.staff.job_type)}`: ""}${p.staff.profile_note? `／${esc(p.staff.profile_note)}`: ""}</p>`: ""}
+<div class="pay-totals">
+<div class="t-row"><span>期間の支給合計（${rows.length}件）</span><span>${fmtYen(tG)}</span></div>
+<div class="t-row"><span>期間の控除合計</span><span>${fmtYen(tD)}</span></div>
+<div class="t-row t-net"><span>期間の差引合計</span><span>${fmtYen(tN)}</span></div>
+</div>
+<h3 class="form-h">月ごとの明細（賃金台帳）</h3>
+${rows.map((r) =>
+`<button type="button" class="adm-pay-row" data-prow="${r.id}">
+<span><span class="pname">${r.month.slice(0, 4)}年${Number(r.month.slice(5, 7))}月分</span><br>
+<span class="adm-pay-sub">${r.days == null? "": `${r.days}日／`}${r.work_min == null? "": fmtHM(r.work_min)}／支給 ${fmtYen(r.gross)}</span></span>
+<span class="pnet">${fmtYen(r.net)}</span>
+</button>`).join("") || `<p class="hint">過去の明細はまだありません。</p>`}
+<div class="pay-actions">
+<button class="btn-share" id="person-print" type="button">台帳を印刷・PDF</button>
+<button class="btn-share alt" id="person-csv" type="button">台帳CSVを出す</button>
+</div>
+${p.staff? `<button class="btn-ghost" id="person-settings" type="button" style="width:100%">この人の設定を開く</button>`: ""}
+<button class="btn-ghost" id="person-close" type="button" style="width:100%;margin-top:10px">閉じる</button>
+</div>`;
+$("person-detail").querySelectorAll("[data-prow]").forEach((b) =>
+b.addEventListener("click", async () => {
+const r = rows.find((x) => x.id === b.dataset.prow);
+if (!r) return;
+hist.y = Number(r.month.slice(0, 4)); hist.m = Number(r.month.slice(5, 7)) - 1;
+await renderHistory();
+const idx = histRows.findIndex((x) => x.id === r.id);
+if (idx >= 0) { renderHistDetail(idx); $("hist-detail").scrollIntoView({ behavior: "smooth", block: "start" }); }
+}));
+$("person-print").addEventListener("click", () => printLedger(p));
+$("person-csv").addEventListener("click", () => {
+const blob = new Blob(["\uFEFF" + ledgerCsv(p)], { type: "text/csv;charset=utf-8" });
+const a = document.createElement("a");
+a.href = URL.createObjectURL(blob);
+a.download = `賃金台帳_${p.name}.csv`;
+a.click();
+URL.revokeObjectURL(a.href);
+toast("CSVを出しました");
+});
+const setBtn = $("person-settings");
+if (setBtn) setBtn.addEventListener("click", () => {
+const idx = allStaff.findIndex((x) => x.id === p.staff.id);
+if (idx >= 0) renderSettingsForm(idx);
+});
+$("person-close").addEventListener("click", () => { $("person-detail").innerHTML = ""; });
+$("person-detail").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function renderSummary() {
+const byMonth = new Map();
+histAll.forEach((r) => {
+const k = r.month.slice(0, 7);
+if (!byMonth.has(k)) byMonth.set(k, { count: 0, gross: 0, ded: 0, net: 0 });
+const o = byMonth.get(k);
+o.count++; o.gross += r.gross; o.ded += r.ded_total; o.net += r.net;
+});
+const keys = [...byMonth.keys()].sort().reverse();
+const tG = histAll.reduce((a, r) => a + r.gross, 0), tD = histAll.reduce((a, r) => a + r.ded_total, 0), tN = histAll.reduce((a, r) => a + r.net, 0);
+$("summary-body").innerHTML =
+keys.map((k) => {
+const o = byMonth.get(k);
+return `<div class="t-row" style="padding:10px 0;border-bottom:1px solid var(--line)">
+<span>${k.slice(0, 4)}年${Number(k.slice(5, 7))}月（${o.count}件）</span>
+<span style="text-align:right">支給 ${fmtYen(o.gross)}<br>差引 <b>${fmtYen(o.net)}</b></span></div>`;
+}).join("") +
+`<div class="pay-totals" style="margin-top:12px">
+<div class="t-row"><span>全期間の支給合計</span><span>${fmtYen(tG)}</span></div>
+<div class="t-row"><span>全期間の控除合計</span><span>${fmtYen(tD)}</span></div>
+<div class="t-row t-net"><span>全期間の差引合計</span><span>${fmtYen(tN)}</span></div>
+</div>
+<button class="btn-ghost" id="summary-csv" type="button" style="width:100%;margin-top:12px">月別合計をCSVで出す</button>`;
+$("summary-csv").addEventListener("click", () => {
+const escCsv = (v) => `"${String(v == null? "": v).replace(/"/g, '""')}"`;
+const lines = [["年月", "件数", "支給合計", "控除合計", "差引合計"].join(",")];
+[...byMonth.keys()].sort().forEach((k) => {
+const o = byMonth.get(k);
+lines.push([`${k.slice(0, 4)}年${Number(k.slice(5, 7))}月`, o.count, o.gross, o.ded, o.net].map(escCsv).join(","));
+});
+const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+const a = document.createElement("a");
+a.href = URL.createObjectURL(blob);
+a.download = "給料の合計_月別.csv";
+a.click();
+URL.revokeObjectURL(a.href);
+toast("CSVを出しました");
+});
+}
+function printAllHistSlips() {
+if (!histRows.length) { toast("この月の実績がありません"); return; }
+const w = window.open("", "_blank");
+if (!w) { toast("ポップアップがブロックされました"); return; }
+const slip = (r) => {
+const trs = (obj, tl, t) => Object.entries(obj || {}).map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num">${fmtYen(v)}</td></tr>`).join("") + `<tr class="total"><td>${tl}</td><td class="num">${fmtYen(t)}</td></tr>`;
+return `<section>
+<h1>給料支払明細書（${hist.y}年${hist.m + 1}月分）</h1>
+<div class="name">${esc(r.name)} 殿</div>
+<table>
+<tr><th>労働日数</th><td>${r.days == null? "―": `${r.days}日`}</td><th>労働時間</th><td>${r.work_min == null? "―": fmtHM(r.work_min)}</td><th>所定時間外</th><td>${r.ot_min == null? "―": fmtHM(r.ot_min)}</td></tr>
+</table>
+<h2>支給額</h2><table>${trs(r.pay, "支給合計", r.gross)}</table>
+<h2>控除額</h2><table>${trs(r.ded, "控除合計", r.ded_total)}</table>
+<div class="net">差引支給額　<span class="amt">${fmtYen(r.net)}</span></div>
+<div>備考：所属 ${esc(r.shop || "―")}${r.note? `／${esc(r.note)}`: ""}</div>
+<div class="foot">株式会社H&Kグループ</div>
+</section>`;
+};
+w.document.write(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<title>給料支払明細書まとめ</title><style>
+@page{size:A4 portrait;margin:14mm}
+body{font-family:"Hiragino Sans","Noto Sans JP",sans-serif;color:#222;font-size:13px}
+section{page-break-after:always}
+section:last-child{page-break-after:auto}
+h1{font-size:19px;text-align:center;margin:0 0 4px}
+.name{font-size:15px;font-weight:700;margin:10px 0}
+table{width:100%;border-collapse:collapse;margin:8px 0 14px}
+th,td{border:1px solid #888;padding:5px 8px}
+th{background:#F2F2F2;text-align:left}
+td.num{text-align:right}
+tr.total td{font-weight:800;background:#F2F2F2}
+h2{font-size:14px;margin:14px 0 4px;border-left:5px solid #111;padding-left:8px}
+.net{text-align:center;border:2px solid #222;padding:12px;margin:16px 0}
+.net .amt{font-size:26px;font-weight:900}
+.foot{text-align:right;margin-top:24px;font-weight:700}
+</style></head><body>
+${histRows.map(slip).join("")}
+<script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script>
+</body></html>`);
+w.document.close();
+}
+$("btn-hist-printall").addEventListener("click", printAllHistSlips);
+
+// ============================================================
+// スタッフ設定（プロフィール＋給与設定）
+// ============================================================
+let allStaff = [];
+async function renderSettings() {
+if (DEMO) { $("staff-settings-list").innerHTML = `<p class="hint">デモモードでは使えません。</p>`; return; }
+allStaff = await DB.listAllStaff();
+$("staff-settings-list").innerHTML = allStaff.map((s, i) =>
+`<button type="button" class="adm-pay-row" data-set-idx="${i}">
+<span><span class="pname">${esc(s.name)}</span>${s.active? "": "（退職）"}<br>
+<span class="adm-pay-sub">${esc(s.shop_name || "")}／${s.pay_type === "salary"? "月給制": "時給制"}／${s.pay_type === "salary"? `基本給 ${fmtYen(s.base_salary || 0)}`: `時給 ${fmtYen(s.hourly_wage)}`}</span></span>
+<span class="pnet" style="font-size:1rem;color:var(--ink)">設定 ›</span>
+</button>`).join("");
+$("staff-settings-list").querySelectorAll("[data-set-idx]").forEach((b) =>
+b.addEventListener("click", () => renderSettingsForm(Number(b.dataset.setIdx))));
+}
+function renderSettingsForm(idx) {
+const s = allStaff[idx];
+if (!s) return;
+const num = (id, label, val, ph) => `<div class="field"><label for="${id}">${label}</label><input id="${id}" type="number" inputmode="numeric" min="0" step="1" value="${val == null? "": val}" placeholder="${ph || ""}"></div>`;
+const chk = (id, label, on) => `<label class="chk-row"><input type="checkbox" id="${id}" ${on? "checked": ""}> ${label}</label>`;
+const others = (s.other_allowances || []).map((o, i) =>
+`<div class="adj-other-row">
+<input type="text" data-sol="${i}" value="${esc(o.label)}" placeholder="手当の名前">
+<input type="number" data-soa="${i}" value="${o.amount}" min="0" step="1" inputmode="numeric" placeholder="金額">
+<button type="button" class="btn-mini danger" data-sodel="${i}">削除</button>
+</div>`).join("");
+$("staff-settings-form").innerHTML = `
+<div class="card">
+<h2>${esc(s.name)} の設定</h2>
+<div id="set-import-banner"></div>
+<h3 class="form-h">基本情報</h3>
+<div class="field"><label for="set-gender">性別</label>
+<select id="set-gender">
+<option value="" ${!s.gender? "selected": ""}>未設定</option>
+<option value="男性" ${s.gender === "男性"? "selected": ""}>男性</option>
+<option value="女性" ${s.gender === "女性"? "selected": ""}>女性</option>
+</select></div>
+<div class="field"><label for="set-birth">生年月日</label><input id="set-birth" type="date" value="${s.birth_date || ""}"></div>
+<div class="field"><label for="set-address">住所</label><input id="set-address" type="text" value="${esc(s.address || "")}" placeholder="住所を入力"></div>
+<h3 class="form-h">勤務情報</h3>
+<div class="field"><label for="set-shop">所属</label>
+<select id="set-shop">
+<option value="辛麺屋 物語 中町本店" ${s.shop_name === "辛麺屋 物語 中町本店"? "selected": ""}>辛麺屋 物語 中町本店</option>
+<option value="BAR OK ROCK" ${s.shop_name === "BAR OK ROCK"? "selected": ""}>BAR OK ROCK</option>
+</select></div>
+<div class="field"><label for="set-jobtype">業務の種類</label><input id="set-jobtype" type="text" value="${esc(s.job_type || "")}" placeholder="例：接客、調理、ホール など"></div>
+<div class="field"><label for="set-postitle">役職</label><input id="set-postitle" type="text" value="${esc(s.position_title || "")}" placeholder="例：店長、マネージャー など"></div>
+<div class="field"><label for="set-emptype">雇用形態</label>
+<select id="set-emptype">
+<option value="" ${!s.employment_type? "selected": ""}>未設定</option>
+<option value="社員" ${s.employment_type === "社員"? "selected": ""}>社員</option>
+<option value="アルバイト" ${s.employment_type === "アルバイト"? "selected": ""}>アルバイト</option>
+<option value="パート" ${s.employment_type === "パート"? "selected": ""}>パート</option>
+<option value="その他" ${s.employment_type === "その他"? "selected": ""}>その他</option>
+</select></div>
+<div class="field"><label for="set-mynumber">マイナンバー（管理者のみ閲覧可）</label><input id="set-mynumber" type="text" inputmode="numeric" maxlength="12" value="" placeholder="読み込み中…"></div>
+<div class="field"><label for="set-hire">入社日（採用日）</label><input id="set-hire" type="date" value="${s.hire_date || ""}"></div>
+<div class="field"><label for="set-note">履歴・メモ</label><input id="set-note" type="text" value="${esc(s.profile_note || "")}" placeholder="例：入社前の職歴、週末中心 など"></div>
+${chk("set-cook", "調理ができる", !!s.can_cook)}
+<h3 class="form-h">退職情報</h3>
+<div class="field"><label for="set-retire">退職日</label><input id="set-retire" type="date" value="${s.retire_date || ""}"></div>
+${chk("set-active", "在籍している（オフにすると退職扱い）", !!s.active)}
+<h3 class="form-h">給与の形</h3>
+<div class="field"><label for="set-paytype">給与形態</label>
+<select id="set-paytype">
+<option value="hourly" ${s.pay_type !== "salary"? "selected": ""}>時給制</option>
+<option value="salary" ${s.pay_type === "salary"? "selected": ""}>月給制（社員）</option>
+</select></div>
+<div id="set-hourly-block">
+${num("set-wage", "時給（円）", s.hourly_wage)}
+${chk("set-nightinc", "時給に深夜手当込み（深夜割増を上乗せしない）", !!s.night_included)}
+${num("set-qwage", "ノルマ達成時の時給（円・空欄ならノルマなし）", s.quota_wage)}
+${num("set-qthr", "ノルマの月売上（円）", s.quota_threshold)}
+${num("set-cross", "辛麺屋出勤手当（1日あたり・空欄なら対象外）", s.cross_allowance)}
+</div>
+<div id="set-salary-block">
+${num("set-base", "基本給（円）", s.base_salary)}
+${num("set-pos", "役職手当（円）", s.position_allowance)}
+${num("set-fixednight", "深夜手当・固定（円）", s.fixed_night_allowance)}
+${num("set-deemed", "みなし残業（円）", s.deemed_overtime)}
+${num("set-transport", "交通費（円）", s.transport_allowance)}
+</div>
+<h3 class="form-h">手当</h3>
+${num("set-drink", "ドリンクバック（円）", s.drink_back)}
+<div class="field"><label>その他手当</label><div id="set-others">${others}</div>
+<button type="button" class="btn-mini" id="set-other-add">手当を追加</button></div>
+<h3 class="form-h">税金・保険</h3>
+${chk("set-si", "社会保険に加入（健康保険・厚生年金・子育て支援金を計算）", !!(s.social_insurance != null? s.social_insurance: s.social_insurance_enrolled))}
+${num("set-dep", "扶養人数", s.dependents)}
+${num("set-restax", "住民税（月額・円）", s.resident_tax)}
+${num("set-adv", "前払金（円）", s.advance_payment)}
+<button class="btn-primary" id="set-save" type="button" style="width:100%;margin-top:14px">保存する</button>
+<button class="btn-ghost" id="set-close" type="button" style="width:100%;margin-top:10px">閉じる</button>
+</div>`;
+const toggleBlocks = () => {
+const sal = $("set-paytype").value === "salary";
+$("set-salary-block").style.display = sal? "block": "none";
+$("set-hourly-block").style.display = sal? "none": "block";
+};
+$("set-paytype").addEventListener("change", toggleBlocks);
+toggleBlocks();
+$("staff-settings-form").querySelectorAll("[data-sodel]").forEach((b) =>
+b.addEventListener("click", () => b.closest(".adj-other-row").remove()));
+$("set-other-add").addEventListener("click", () => {
+const i = $("set-others").children.length;
+const div = document.createElement("div");
+div.className = "adj-other-row";
+div.innerHTML = `<input type="text" data-sol="${i}" value="" placeholder="手当の名前">
+<input type="number" data-soa="${i}" value="0" min="0" step="1" inputmode="numeric" placeholder="金額">
+<button type="button" class="btn-mini danger">削除</button>`;
+div.querySelector("button").addEventListener("click", () => div.remove());
+$("set-others").appendChild(div);
+});
+$("set-close").addEventListener("click", () => { $("staff-settings-form").innerHTML = ""; });
+$("set-save").addEventListener("click", async () => {
+const v = (id) => { const el = $(id); const n = Number(el.value); return el.value === "" ||!Number.isFinite(n)? null: Math.round(n); };
+const v0 = (id) => v(id) || 0;
+const othersArr = [];
+$("set-others").querySelectorAll(".adj-other-row").forEach((rowEl) => {
+const lab = rowEl.querySelector("[data-sol]").value.trim();
+const amo = Number(rowEl.querySelector("[data-soa]").value);
+if (lab && Number.isFinite(amo)) othersArr.push({ label: lab, amount: Math.round(amo) });
+});
+const si = $("set-si").checked;
+const fields = {
+gender: $("set-gender").value || null,
+birth_date: $("set-birth").value || null,
+address: $("set-address").value.trim() || null,
+job_type: $("set-jobtype").value.trim() || null,
+position_title: $("set-postitle").value.trim() || null,
+employment_type: $("set-emptype").value || null,
+retire_date: $("set-retire").value || null,
+shop_name: $("set-shop").value,
+hire_date: $("set-hire").value || null,
+profile_note: $("set-note").value.trim() || null,
+can_cook: $("set-cook").checked,
+active: $("set-active").checked,
+pay_type: $("set-paytype").value,
+hourly_wage: v0("set-wage") || 1085,
+night_included: $("set-nightinc").checked,
+quota_wage: v("set-qwage"),
+quota_threshold: v("set-qthr"),
+cross_allowance: v("set-cross"),
+base_salary: v("set-base"),
+position_allowance: v0("set-pos"),
+fixed_night_allowance: v0("set-fixednight"),
+deemed_overtime: v0("set-deemed"),
+transport_allowance: v0("set-transport"),
+drink_back: v0("set-drink"),
+other_allowances: othersArr,
+social_insurance: si,
+social_insurance_enrolled: si,
+dependents: v0("set-dep"),
+resident_tax: v0("set-restax"),
+advance_payment: v0("set-adv")
+};
+const err = await DB.updateStaff(s.id, fields);
+if (err) { toast("保存できませんでした。もう一度試してね"); return; }
+const mn = $("set-mynumber").value.replace(/[^0-9]/g, "");
+const mnErr = await DB.upsertStaffPrivate(s.id, mn || null);
+if (mnErr) { toast("設定は保存しましたが、マイナンバーの保存に失敗しました"); return; }
+if (window.__pendingImportId) { await DB.markImportUsed(window.__pendingImportId); window.__pendingImportId = null; }
+toast(`${s.name}さんの設定を保存しました`);
+$("staff-settings-form").innerHTML = "";
+STAFF = (await DB.listStaff()).filter((x) => x.role!== "kiosk");
+await renderAll();
+await renderSettings();
+});
+DB.listPendingImports().then((imps) => {
+const hit = imps.find((x) => (x.for_name || "").replace(/\s/g, "") === s.name.replace(/\s/g, ""));
+const box = $("set-import-banner");
+if (!hit || !box) return;
+box.innerHTML = `<div class="banner warn" style="margin-bottom:12px">履歴書の読み取り結果があります（${esc(hit.for_name)}さん分）。内容を確認してから反映してください。
+<button type="button" class="btn-mini" id="set-import-apply" style="margin-left:8px">フォームに反映する</button></div>`;
+$("set-import-apply").addEventListener("click", () => {
+const f = hit.fields || {};
+if (f.gender) $("set-gender").value = f.gender;
+if (f.birth_date) $("set-birth").value = f.birth_date;
+if (f.address) $("set-address").value = f.address;
+if (f.profile_note) $("set-note").value = f.profile_note;
+if (f.job_type) $("set-jobtype").value = f.job_type;
+box.innerHTML = `<div class="banner" style="margin-bottom:12px">フォームに反映しました。内容を確認して「保存する」を押してください。</div>`;
+window.__pendingImportId = hit.id;
+});
+});
+DB.getStaffPrivate(s.id).then((pv) => {
+const el = $("set-mynumber");
+if (el) { el.value = pv && pv.my_number? pv.my_number: ""; el.placeholder = "12桁の番号"; }
+});
+$("staff-settings-form").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// ============================================================
+// 手入力（過去実績への追加・編集）
+// ============================================================
+let manEditId = null;
+function manItemRow(label, amount) {
+return `<div class="adj-other-row man-row">
+<input type="text" class="man-label" value="${esc(label || "")}" placeholder="項目名">
+<input type="number" class="man-amount" value="${amount == null? "": amount}" step="1" inputmode="numeric" placeholder="金額">
+<button type="button" class="btn-mini danger man-del">削除</button>
+</div>`;
+}
+function openManualForm(row) {
+if (DEMO) { toast("デモモードでは保存できません"); return; }
+manEditId = row? row.id: null;
+const ym = row? row.month.slice(0, 7): `${hist.y}-${pad(hist.m + 1)}`;
+const payRows = row? Object.entries(row.pay || {}).map(([k, v]) => manItemRow(k, v)).join(""): manItemRow("基本給", "") + manItemRow("深夜手当", "");
+const dedRows = row? Object.entries(row.ded || {}).map(([k, v]) => manItemRow(k, v)).join(""): manItemRow("所得税", "") + manItemRow("雇用保険料", "");
+const hm = (min) => min == null? ["", ""]: [Math.floor(min / 60), min % 60];
+const [wh, wm] = hm(row? row.work_min: null);
+const [oh, om] = hm(row? row.ot_min: null);
+$("manual-form").innerHTML = `
+<div class="card" style="margin-top:16px">
+<h2>${row? "明細を編集": "明細を手入力で追加"}</h2>
+<div class="field"><label for="man-month">対象月</label><input id="man-month" type="month" value="${ym}"></div>
+<div class="field"><label for="man-name">氏名</label><input id="man-name" type="text" value="${esc(row? row.name: "")}" placeholder="例：山田 太郎"></div>
+<div class="field"><label for="man-shop">所属</label>
+<select id="man-shop">
+<option value="辛麺屋物語中町本店" ${row && row.shop === "辛麺屋物語中町本店"? "selected": ""}>辛麺屋 物語 中町本店</option>
+<option value="BAR OK ROCK" ${row && row.shop === "BAR OK ROCK"? "selected": ""}>BAR OK ROCK</option>
+</select></div>
+<div class="field"><label for="man-days">労働日数</label><input id="man-days" type="number" inputmode="numeric" min="0" step="1" value="${row && row.days != null? row.days: ""}"></div>
+<div class="field"><label>労働時間</label><div class="hm-row"><input id="man-wh" type="number" inputmode="numeric" min="0" step="1" value="${wh}" placeholder="時間"><span>時間</span><input id="man-wm" type="number" inputmode="numeric" min="0" max="59" step="1" value="${wm}" placeholder="分"><span>分</span></div></div>
+<div class="field"><label>所定時間外労働</label><div class="hm-row"><input id="man-oh" type="number" inputmode="numeric" min="0" step="1" value="${oh}" placeholder="時間"><span>時間</span><input id="man-om" type="number" inputmode="numeric" min="0" max="59" step="1" value="${om}" placeholder="分"><span>分</span></div></div>
+<h3 class="form-h">支給項目</h3>
+<div id="man-pay-rows">${payRows}</div>
+<button type="button" class="btn-mini" id="man-pay-add">支給項目を追加</button>
+<h3 class="form-h">控除項目</h3>
+<div id="man-ded-rows">${dedRows}</div>
+<button type="button" class="btn-mini" id="man-ded-add">控除項目を追加</button>
+<h3 class="form-h">控除の自動計算</h3>
+<label class="chk-row"><input type="checkbox" id="man-si" ${row && row.ded && row.ded["健康保険料"]? "checked": ""}> 社会保険に加入している</label>
+<div class="field"><label for="man-dep">扶養人数</label><input id="man-dep" type="number" inputmode="numeric" min="0" step="1" value="0"></div>
+<button type="button" class="btn-share" id="man-autoded" style="width:100%">控除を自動計算して控除項目に入れる</button>
+<p class="hint" style="margin-top:8px">支給合計から、雇用保険・社会保険・所得税を概算で計算します（住民税・前払金はスタッフ設定の登録値）。計算後はそのまま数字を直せます。氏名がスタッフと一致すると、扶養人数・社会保険・住民税・前払金を設定から自動で入れます。</p>
+<div class="field" style="margin-top:14px"><label for="man-note">備考</label><input id="man-note" type="text" value="${esc(row? (row.note || ""): "")}"></div>
+<div class="pay-totals" id="man-totals"></div>
+<button class="btn-primary" id="man-save" type="button" style="width:100%;margin-top:14px">保存する</button>
+<button class="btn-ghost" id="man-close" type="button" style="width:100%;margin-top:10px">やめる</button>
+</div>`;
+const collect = (boxId) => {
+const obj = {};
+$(boxId).querySelectorAll(".man-row").forEach((r) => {
+const lab = r.querySelector(".man-label").value.trim();
+const amo = Number(r.querySelector(".man-amount").value);
+if (lab && Number.isFinite(amo)) obj[lab] = (obj[lab] || 0) + Math.round(amo);
+});
+return obj;
+};
+const updTotals = () => {
+const pay = collect("man-pay-rows"), ded = collect("man-ded-rows");
+const g = Object.values(pay).reduce((a, b) => a + b, 0);
+const d = Object.values(ded).reduce((a, b) => a + b, 0);
+$("man-totals").innerHTML =
+`<div class="t-row"><span>支給合計</span><span>${fmtYen(g)}</span></div>` +
+`<div class="t-row"><span>控除合計</span><span>${fmtYen(d)}</span></div>` +
+`<div class="t-row t-net"><span>差引支給額</span><span>${fmtYen(g - d)}</span></div>`;
+};
+$("manual-form").addEventListener("input", updTotals);
+const bindDel = () => $("manual-form").querySelectorAll(".man-del").forEach((b) => b.onclick = () => { b.closest(".man-row").remove(); updTotals(); });
+const addRow = (boxId) => {
+const div = document.createElement("div");
+div.innerHTML = manItemRow("", "");
+$(boxId).appendChild(div.firstElementChild);
+bindDel();
+};
+let manStaff = null;
+$("man-name").addEventListener("change", () => {
+const nm = $("man-name").value.replace(/\s/g, "");
+manStaff = (allStaff || []).find((x) => x.name.replace(/\s/g, "") === nm) || null;
+if (manStaff) {
+$("man-si").checked = !!(manStaff.social_insurance != null? manStaff.social_insurance: manStaff.social_insurance_enrolled);
+$("man-dep").value = manStaff.dependents || 0;
+toast(`${manStaff.name}さんの設定を読み込みました`);
+}
+});
+$("man-autoded").addEventListener("click", () => {
+const pay = collect("man-pay-rows");
+const gross = Object.values(pay).reduce((a, b) => a + b, 0);
+if (gross <= 0) { toast("先に支給項目を入れてね"); return; }
+const si = $("man-si").checked;
+const dep = Math.max(0, Math.round(Number($("man-dep").value) || 0));
+const emp = Math.round(gross * PR.employmentInsuranceRate);
+const health = si? Math.round(gross * PR.healthInsuranceRate): 0;
+const pension = si? Math.round(gross * PR.pensionRate): 0;
+const child = si? Math.round(gross * PR.childSupportRate): 0;
+const tax = estimateIncomeTax(gross, health + pension + child + emp, dep);
+const rows = [];
+if (si) { rows.push(["健康保険料", health], ["厚生年金", pension], ["子ども・子育て支援金", child]); }
+rows.push(["雇用保険料", emp], ["所得税", tax]);
+if (manStaff && manStaff.resident_tax > 0) rows.push(["住民税", manStaff.resident_tax]);
+if (manStaff && manStaff.advance_payment > 0) rows.push(["前払金", manStaff.advance_payment]);
+$("man-ded-rows").innerHTML = rows.map(([k, v]) => manItemRow(k, v)).join("");
+bindDel();
+updTotals();
+toast("控除を自動計算しました（概算）");
+});
+$("man-pay-add").addEventListener("click", () => addRow("man-pay-rows"));
+$("man-ded-add").addEventListener("click", () => addRow("man-ded-rows"));
+bindDel();
+updTotals();
+$("man-close").addEventListener("click", () => { $("manual-form").innerHTML = ""; manEditId = null; });
+$("man-save").addEventListener("click", async () => {
+const name = $("man-name").value.trim();
+const monthVal = $("man-month").value;
+if (!name) { toast("氏名を入れてね"); return; }
+if (!monthVal) { toast("対象月を選んでね"); return; }
+const pay = collect("man-pay-rows"), ded = collect("man-ded-rows");
+const gross = Object.values(pay).reduce((a, b) => a + b, 0);
+const dedTotal = Object.values(ded).reduce((a, b) => a + b, 0);
+const mins = (hId, mId) => {
+const h = Number($(hId).value), m = Number($(mId).value);
+if ($(hId).value === "" && $(mId).value === "") return null;
+return (Number.isFinite(h)? h: 0) * 60 + (Number.isFinite(m)? m: 0);
+};
+const rec = {
+month: `${monthVal}-01`,
+name,
+shop: $("man-shop").value,
+days: $("man-days").value === ""? null: Math.round(Number($("man-days").value)),
+work_min: mins("man-wh", "man-wm"),
+ot_min: mins("man-oh", "man-om"),
+pay, gross, ded, ded_total: dedTotal, net: gross - dedTotal,
+note: $("man-note").value.trim() || null
+};
+const err = manEditId? await DB.updatePayrollHistory(manEditId, rec): await DB.insertPayrollHistory(rec);
+if (err) { toast("保存できませんでした。もう一度試してね"); return; }
+toast("保存しました");
+$("manual-form").innerHTML = "";
+manEditId = null;
+const [yy, mm] = monthVal.split("-").map(Number);
+hist.y = yy; hist.m = mm - 1;
+await renderHistory();
+await refreshHistSide();
+});
+$("manual-form").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+$("btn-manual-open").addEventListener("click", () => openManualForm(null));
 
 // ============================================================
 // 初期化
