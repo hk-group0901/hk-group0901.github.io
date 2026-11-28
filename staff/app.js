@@ -1334,14 +1334,26 @@ buildCalendar($("sch-calendar"), y, m, (date, d) => {
 const ds = fmtDate(date);
 const closed = date.getDay() === CFG.SHOP.closedWeekday;
 const dayShifts = byDate.get(ds) || [];
+// 人数不足の判定（Airシフトの運用ルール）：昼は2名（日曜は昼営業なし）、
+// 夜はディナー平日2名・金土3名、深夜は1名以上。定休日は対象外。
+const dow = date.getDay();
+const cnt = (b) => dayShifts.filter((s) => s.band === b).length;
+const nightReq = (dow === 5 || dow === 6)? 3: 2;
+const short = new Set();
+if (!closed) {
+if (dow!== 0 && cnt("lunch") < 2) short.add("lunch");
+if (cnt("dinner") < nightReq) short.add("dinner");
+if (cnt("late") < 1) short.add("late");
+}
 const tags = ["lunch", "dinner", "late"].map((b) => {
 // 月カレンダーには名前を出さず、区分ごとの人数チップだけ出す。
 // 名前と時間は、日をタップしたときの日別詳細（下のカード）で見る。
-const count = dayShifts.filter((s) => s.band === b).length;
+const count = cnt(b);
 if (!count) return "";
 const mine = dayShifts.some((s) => s.band === b && s.staff_id === ME.id)? " mine": "";
-return `<span class="tag ${b}${mine}">${BAND_SHORT[b]}${count}</span>`;
-}).join("");
+const sh = short.has(b)? " short": "";
+return `<span class="tag ${b}${mine}${sh}">${BAND_SHORT[b]}${count}</span>`;
+}).join("") + (short.size? '<span class="tag warn">要確認</span>': "");
 const dowCls = date.getDay() === 0? " sun": date.getDay() === 6? " sat": "";
 return `<button class="cal-day${closed? " closed": ""}${ds === fmtDate(new Date())? " today": ""}${dowCls}" data-date="${ds}">
 <span class="dnum">${d}</span>${closed? '<span class="tag">定休日</span>': tags}</button>`;

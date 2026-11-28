@@ -317,6 +317,8 @@ body.admin-dark .logout-row button { color: #9C8692; }
 #sch-calendar .tag.dinner, .tag.solid.dinner { background: #4A90C4;       color: #fff; }
 #sch-calendar .tag.late,   .tag.solid.late   { background: var(--purple); color: #fff; }
 .tag.mine   { box-shadow: 0 0 0 2px var(--accent-deep); }
+.tag.short  { box-shadow: 0 0 0 2px #E11D48; }
+.tag.warn   { background: #FDE8EC; color: #BE123C; font-weight: 800; }
 .cal-day.closed .tag { background: #EFE0E6; color: #A98D99; }
 /* シフト確認カレンダーのチップ＝区分ごとの人数だけ（昼2／D3／深夜2）。
    名前は出さないので、横書き1行で中央に置く。自分が入る区分は .mine の枠で分かる */
