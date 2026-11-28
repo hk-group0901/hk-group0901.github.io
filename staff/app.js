@@ -2018,14 +2018,17 @@ reqs.forEach((r) => {
 if (!byStaff.has(r.staff_id)) byStaff.set(r.staff_id, []);
 byStaff.get(r.staff_id).push(r);
 });
+const isExempt = (s) => s.pay_type === "salary"; // 社員は希望提出の対象外
 const submitted = STAFF.filter((s) => (byStaff.get(s.id) || []).length > 0);
-const missing = STAFF.filter((s) =>!(byStaff.get(s.id) || []).length);
+const missing = STAFF.filter((s) =>!isExempt(s) &&!(byStaff.get(s.id) || []).length);
 $("adm-req-summary").innerHTML =
 `提出済み ${submitted.length}名 ／ 未提出 ${missing.length}名` +
 (missing.length? `<br>未提出：${missing.map((s) => esc(s.name)).join("、")}`: "");
 $("adm-req-list").innerHTML = STAFF.map((s) => {
 const list = (byStaff.get(s.id) || []).slice()
 .sort((a, b) => (a.date < b.date? -1: a.date > b.date? 1: a.band < b.band? -1: 1));
+if (!list.length && isExempt(s))
+return `<div class="adm-req-staff"><span class="adm-badge">対象外</span> <b>${esc(s.name)}</b></div>`;
 if (!list.length)
 return `<div class="adm-req-staff"><span class="adm-badge ng">未提出</span> <b>${esc(s.name)}</b></div>`;
 const byDate = new Map();
