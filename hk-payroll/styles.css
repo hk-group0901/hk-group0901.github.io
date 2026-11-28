@@ -486,3 +486,85 @@ h1, h2, h3 { line-height: 1.35; }
 .blocked-wrap { max-width: 480px; margin: 0 auto; padding: 60px 18px 28px; text-align: center; }
 .blocked-title { font-size: 1.4rem; font-weight: 900; margin: 14px 0 8px; }
 body { padding-bottom: 32px; } /* 給与アプリには下部ナビがない */
+
+/* ============================================================
+   H&Kテーマ（カッコよさ＋操作性）— 2026-11-28
+   黒基調・シャープな角・大きな数字。会社のHPと同じモノクロ。
+   ============================================================ */
+:root {
+  --radius: 14px;
+  --font: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP",
+          "Yu Gothic UI", sans-serif;
+  --red: #C8102E;
+}
+body { background: #ECECEC; }
+.app-header {
+  background: #0B0B0C; border-radius: 0 0 20px 20px;
+  box-shadow: 0 10px 28px rgba(0,0,0,.35); padding: 22px 20px 26px;
+}
+.app-header .shop-name { letter-spacing: .18em; font-weight: 700; }
+.app-header .hello { font-size: 1.55rem; letter-spacing: .02em; }
+.card {
+  border: 1px solid #D8D8D8; border-radius: var(--radius);
+  box-shadow: 0 10px 24px rgba(0,0,0,.07); padding: 20px 18px;
+}
+.card h2 { border-left: 6px solid #111; padding-left: 10px; letter-spacing: .03em; }
+/* 月送りを常に手元に（スクロールしても上に残る） */
+.cal-head {
+  position: sticky; top: 0; z-index: 10;
+  background: rgba(236,236,236,.94); backdrop-filter: blur(6px);
+  margin: -6px -16px 14px; padding: 10px 16px;
+}
+.month-title { font-size: 1.32rem; font-weight: 900; letter-spacing: .04em; }
+.btn-nav {
+  width: 52px; height: 52px; border-radius: 50%;
+  background: #111; color: #fff; font-size: 1.5rem; border: none;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 12px rgba(0,0,0,.25);
+}
+/* 給与一覧：行を大きく、手取りを主役に */
+.adm-pay-row { min-height: 74px; padding: 14px 4px; }
+.adm-pay-row .pname { font-size: 1.12rem; }
+.adm-pay-row .pnet { font-size: 1.42rem; color: var(--red); letter-spacing: .01em; }
+.adm-pay-sub { font-variant-numeric: tabular-nums; }
+.pay-totals { border-top: 3px solid #111; margin-top: 10px; padding-top: 10px; }
+.pay-totals .t-row span:last-child { font-variant-numeric: tabular-nums; font-weight: 800; }
+.pay-totals .t-net { font-size: 1.12rem; }
+.pay-totals .t-net span:last-child { color: var(--red); font-size: 1.5rem; font-weight: 900; }
+/* 明細テーブル */
+.pay-table td.num { font-variant-numeric: tabular-nums; }
+.pay-table tr.total td { border-top: 2px solid #111; }
+/* ボタン：大きく押しやすく */
+.btn-primary {
+  background: #111; border-radius: 12px; min-height: 56px;
+  font-size: 1.05rem; letter-spacing: .06em;
+  box-shadow: 0 6px 16px rgba(0,0,0,.22);
+}
+.btn-share { border-radius: 12px; min-height: 52px; border: 2px solid #111; background: #111; color: #fff; }
+.btn-share.alt { background: #fff; color: #111; }
+.btn-ghost { border-radius: 12px; min-height: 48px; border: 2px solid #C9C9C9; color: #333; background: #fff; }
+/* 入力欄 */
+.field input, .field select {
+  min-height: 56px; border-radius: 10px; border: 2px solid #C9C9C9; font-size: 1.05rem;
+}
+.field input:focus, .field select:focus { border-color: #111; outline: none; }
+/* ノルマカードは白黒に寄せる */
+.quota-card { border-color: #111; background: #fff; }
+.quota-fill { background: #111; }
+.quota-fill.done { background: var(--green); }
+/* ログイン画面：黒一色で締める */
+#view-login, #view-blocked { max-width: none; padding: 0; background: #0B0B0C; color: #fff; min-height: 100dvh; }
+#view-login .login-title, #view-blocked .blocked-title { color: #fff; letter-spacing: .06em; }
+#view-login .login-sub { color: #B9B9B9; }
+#view-login .hint, #view-blocked .hint { color: #9A9A9A; }
+#view-login img, #view-blocked img { box-shadow: 0 0 0 2px #fff; background: #111; }
+#view-login .field label { color: #EDEDED; }
+#view-login .field input, #view-login .field select {
+  background: #1A1A1C; border-color: #3A3A3C; color: #fff;
+}
+#view-login .field input:focus, #view-login .field select:focus { border-color: #fff; }
+#view-login .btn-primary { background: #fff; color: #111; box-shadow: 0 6px 16px rgba(255,255,255,.15); }
+#view-login .btn-ghost, #view-blocked .btn-primary { background: transparent; border-color: #4A4A4C; color: #EDEDED; }
+#view-login .demo-badge { background: #26262A; color: #FFD34D; border: 1px solid #4A4A4C; }
+.toast { background: #111; color: #fff; border-radius: 999px; }
+.logout-row button { color: #888; }

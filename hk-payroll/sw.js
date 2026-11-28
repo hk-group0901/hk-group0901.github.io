@@ -1,7 +1,7 @@
 /* 辛麺屋 物語 給与アプリ Service Worker
    - 静的ファイルのキャッシュ（オフラインでも画面が開けるように）
 */
-const CACHE_NAME = "hk-payroll-v1";
+const CACHE_NAME = "hk-payroll-v2";
 const STATIC_FILES = [
   "./",
   "./index.html",
