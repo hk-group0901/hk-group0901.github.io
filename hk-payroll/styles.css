@@ -580,3 +580,16 @@ body { background: #ECECEC; }
 .hm-row input { flex: 1; min-height: 52px; border-radius: 10px; border: 2px solid #C9C9C9; font-size: 1.05rem; padding: 0 12px; }
 
 .badge-mini { display: inline-block; font-size: .72rem; font-weight: 800; border: 1.5px solid #111; border-radius: 999px; padding: 1px 8px; vertical-align: middle; }
+
+/* 画面見出し（戻るボタン＋タイトル） */
+.view-head { display: flex; align-items: center; gap: 14px; margin: 4px 0 16px; }
+.back-btn { width: 52px; height: 52px; flex: none; border-radius: 50%; border: none; background: #111; color: #fff; font-size: 1.7rem; line-height: 1; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,.25); }
+.view-title { font-size: 1.45rem; font-weight: 900; letter-spacing: .02em; }
+/* ホームのメニュー */
+.menu-list { display: flex; flex-direction: column; gap: 14px; margin-top: 6px; }
+.menu-item { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; background: #fff; border: 2px solid #111; border-radius: 18px; padding: 18px 16px; cursor: pointer; box-shadow: 0 6px 16px rgba(0,0,0,.08); }
+.menu-num { flex: none; width: 46px; height: 46px; border-radius: 14px; background: #111; color: #fff; font-size: 1.25rem; font-weight: 900; display: flex; align-items: center; justify-content: center; }
+.menu-text { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.menu-title { font-size: 1.22rem; font-weight: 900; color: var(--ink); }
+.menu-desc { font-size: .92rem; color: var(--muted); line-height: 1.45; }
+.menu-arrow { flex: none; font-size: 1.6rem; font-weight: 700; color: var(--muted); }

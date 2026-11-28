@@ -456,6 +456,15 @@ period: `${y}年${m + 1}月1日〜${m + 1}月${new Date(y, m + 1, 0).getDate()}�
 let ME = null; // 自分の staff レコード
 let STAFF = []; // 全スタッフ（kiosk行は除く）
 
+// ---------- 画面切り替え（ホーム⇔各画面） ----------
+function showMainView(name) {
+document.querySelectorAll("#app-shell .view").forEach((v) =>
+v.classList.toggle("active", v.id === "view-" + name));
+window.scrollTo(0, 0);
+}
+document.querySelectorAll("[data-go]").forEach((b) =>
+b.addEventListener("click", () => showMainView(b.dataset.go)));
+
 async function enterApp() {
 STAFF = (await DB.listStaff()).filter((s) => s.role!== "kiosk");
 if (!ME || ME.role!== "admin") { showBlocked(); return; }
@@ -472,6 +481,7 @@ await renderAll();
 await renderHistory();
 await renderSettings();
 await refreshHistSide();
+showMainView("home");
 }
 function showBlocked() {
 // 管理者以外には中身を一切出さない
@@ -1084,7 +1094,7 @@ catch (e) { toast("コピーできませんでした"); }
 });
 $("hist-share").addEventListener("click", () => shareText("給料支払明細書", histTextFor(r)));
 $("hist-print").addEventListener("click", () => printHistSlip(r));
-$("hist-edit").addEventListener("click", () => openManualForm(r));
+$("hist-edit").addEventListener("click", () => { showMainView("manual"); openManualForm(r); });
 $("hist-del").addEventListener("click", async () => {
 if (!confirm(`${r.name}さんの${hist.y}年${hist.m + 1}月分の実績を削除しますか？`)) return;
 const err = await DB.deletePayrollHistory(r.id);
@@ -1109,7 +1119,7 @@ $("hist-next").addEventListener("click", async () => { shiftHist(1); await rende
 let histAll = [];
 const normName = (n) => (n || "").replace(/\s/g, "");
 async function refreshHistSide() {
-if (DEMO) { $("people-card").style.display = "none"; $("summary-card").style.display = "none"; return; }
+if (DEMO) { $("people-card").style.display = "none"; $("summary-card").style.display = "none"; document.querySelectorAll(".real-only").forEach((el) => { el.style.display = "none"; }); return; }
 histAll = await DB.listPayrollHistoryAll();
 renderPeople();
 renderSummary();
@@ -1223,7 +1233,7 @@ if (!r) return;
 hist.y = Number(r.month.slice(0, 4)); hist.m = Number(r.month.slice(5, 7)) - 1;
 await renderHistory();
 const idx = histRows.findIndex((x) => x.id === r.id);
-if (idx >= 0) { renderHistDetail(idx); $("hist-detail").scrollIntoView({ behavior: "smooth", block: "start" }); }
+if (idx >= 0) { showMainView("history"); renderHistDetail(idx); setTimeout(() => $("hist-detail").scrollIntoView({ behavior: "smooth", block: "start" }), 60); }
 }));
 $("person-print").addEventListener("click", () => printLedger(p));
 $("person-csv").addEventListener("click", () => {
@@ -1238,7 +1248,7 @@ toast("CSVを出しました");
 const setBtn = $("person-settings");
 if (setBtn) setBtn.addEventListener("click", () => {
 const idx = allStaff.findIndex((x) => x.id === p.staff.id);
-if (idx >= 0) renderSettingsForm(idx);
+if (idx >= 0) { showMainView("settings"); renderSettingsForm(idx); }
 });
 $("person-close").addEventListener("click", () => { $("person-detail").innerHTML = ""; });
 $("person-detail").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1662,6 +1672,7 @@ const [yy, mm] = monthVal.split("-").map(Number);
 hist.y = yy; hist.m = mm - 1;
 await renderHistory();
 await refreshHistSide();
+showMainView("history");
 });
 $("manual-form").scrollIntoView({ behavior: "smooth", block: "start" });
 }

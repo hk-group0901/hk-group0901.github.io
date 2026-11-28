@@ -67,7 +67,49 @@
     <div class="today" id="hello-date"></div>
   </header>
 
-  <section id="view-main" class="view active">
+  <!-- ===== ホーム（メニュー） ===== -->
+  <section id="view-home" class="view active">
+    <div class="menu-list">
+      <button type="button" class="menu-item" data-go="payroll">
+        <span class="menu-num">1</span>
+        <span class="menu-text"><span class="menu-title">給与一覧・明細</span><span class="menu-desc">月を選んで、全員分の給料の計算と明細を見ます</span></span>
+        <span class="menu-arrow">›</span>
+      </button>
+      <button type="button" class="menu-item real-only" data-go="history">
+        <span class="menu-num">2</span>
+        <span class="menu-text"><span class="menu-title">過去の給与実績</span><span class="menu-desc">2025年8月〜2026年10月の、確定済みの明細です</span></span>
+        <span class="menu-arrow">›</span>
+      </button>
+      <button type="button" class="menu-item real-only" data-go="people">
+        <span class="menu-num">3</span>
+        <span class="menu-text"><span class="menu-title">従業員</span><span class="menu-desc">1人ずつの台帳・期間の合計・プロフィールを見ます</span></span>
+        <span class="menu-arrow">›</span>
+      </button>
+      <button type="button" class="menu-item real-only" data-go="summary">
+        <span class="menu-num">4</span>
+        <span class="menu-text"><span class="menu-title">給料の合計</span><span class="menu-desc">月ごとの合計と、全期間の合計を確認します</span></span>
+        <span class="menu-arrow">›</span>
+      </button>
+      <button type="button" class="menu-item" data-go="manual">
+        <span class="menu-num">5</span>
+        <span class="menu-text"><span class="menu-title">明細の手入力</span><span class="menu-desc">明細を手で入力して追加します（控除の自動計算つき）</span></span>
+        <span class="menu-arrow">›</span>
+      </button>
+      <button type="button" class="menu-item" data-go="settings">
+        <span class="menu-num">6</span>
+        <span class="menu-text"><span class="menu-title">スタッフ設定</span><span class="menu-desc">プロフィール・給料・税金と保険を1人ずつ設定します</span></span>
+        <span class="menu-arrow">›</span>
+      </button>
+    </div>
+    <div class="logout-row"><button id="btn-logout" type="button">ログアウト</button></div>
+  </section>
+
+  <!-- ===== 給与一覧・明細（計算） ===== -->
+  <section id="view-payroll" class="view">
+    <div class="view-head">
+      <button class="back-btn" type="button" data-go="home" aria-label="ホームへ戻る">‹</button>
+      <div class="view-title">給与一覧・明細</div>
+    </div>
     <div class="cal-head">
       <button class="btn-nav" id="pay-prev" aria-label="前の月">‹</button>
       <div class="month-title" id="pay-month-title"></div>
@@ -112,10 +154,15 @@
       </div>
       <button class="btn-primary" id="btn-sales-save" type="button">売上を登録する</button>
     </div>
+  </section>
 
-    <!-- 過去の給与実績 -->
+  <!-- ===== 過去の給与実績 ===== -->
+  <section id="view-history" class="view">
+    <div class="view-head">
+      <button class="back-btn" type="button" data-go="home" aria-label="ホームへ戻る">‹</button>
+      <div class="view-title">過去の給与実績</div>
+    </div>
     <div class="card" id="hist-card">
-      <h2>過去の給与実績</h2>
       <div class="hist-head">
         <button class="btn-nav" id="hist-prev" aria-label="前の月">‹</button>
         <div class="month-title" id="hist-month-title"></div>
@@ -132,39 +179,57 @@
       <p class="hint" style="margin-top:10px">以前の給料アプリに残っていた確定済みの明細です（2025年8月分〜2026年10月分）。退職したスタッフの分も含まれます。行をタップすると内訳が見られます。</p>
     </div>
     <div id="hist-detail"></div>
+  </section>
 
-    <!-- 従業員 -->
+  <!-- ===== 従業員 ===== -->
+  <section id="view-people" class="view">
+    <div class="view-head">
+      <button class="back-btn" type="button" data-go="home" aria-label="ホームへ戻る">‹</button>
+      <div class="view-title">従業員</div>
+    </div>
     <div class="card" id="people-card">
-      <h2>従業員</h2>
       <p class="hint">名前をタップすると、その人の月ごとの明細（賃金台帳）と期間合計が見られます。在籍中の人は設定も開けます。</p>
       <div id="people-list"></div>
       <div id="person-detail"></div>
     </div>
+  </section>
 
-    <!-- 給料の合計 -->
+  <!-- ===== 給料の合計 ===== -->
+  <section id="view-summary" class="view">
+    <div class="view-head">
+      <button class="back-btn" type="button" data-go="home" aria-label="ホームへ戻る">‹</button>
+      <div class="view-title">給料の合計</div>
+    </div>
     <div class="card" id="summary-card">
-      <h2>給料の合計</h2>
       <p class="hint">過去の給与実績の月ごとの合計と、全期間の合計です。</p>
       <div id="summary-body"></div>
     </div>
+  </section>
 
-    <!-- 手入力 -->
+  <!-- ===== 明細の手入力 ===== -->
+  <section id="view-manual" class="view">
+    <div class="view-head">
+      <button class="back-btn" type="button" data-go="home" aria-label="ホームへ戻る">‹</button>
+      <div class="view-title">明細の手入力</div>
+    </div>
     <div class="card" id="manual-card">
-      <h2>明細の手入力</h2>
       <p class="hint">自動計算の対象外の人や、確定した金額をそのまま残したいときに使います。保存すると「過去の給与実績」に追加されます。</p>
       <button class="btn-primary" id="btn-manual-open" type="button" style="width:100%;margin-top:10px">手入力で明細を追加する</button>
       <div id="manual-form"></div>
     </div>
+  </section>
 
-    <!-- スタッフ設定 -->
+  <!-- ===== スタッフ設定 ===== -->
+  <section id="view-settings" class="view">
+    <div class="view-head">
+      <button class="back-btn" type="button" data-go="home" aria-label="ホームへ戻る">‹</button>
+      <div class="view-title">スタッフ設定</div>
+    </div>
     <div class="card" id="settings-card">
-      <h2>スタッフ設定</h2>
-      <p class="hint">1人ずつのプロフィール（採用日など）と給与設定（時給・手当・社会保険など）を変更できます。行をタップすると設定が開きます。</p>
+      <p class="hint">1人ずつのプロフィール（基本情報・勤務情報・退職情報）と給与設定（時給・手当・社会保険など）を変更できます。行をタップすると設定が開きます。</p>
       <div id="staff-settings-list"></div>
       <div id="staff-settings-form"></div>
     </div>
-
-    <div class="logout-row"><button id="btn-logout" type="button">ログアウト</button></div>
   </section>
 </div>
 
