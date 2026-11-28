@@ -1,0 +1,102 @@
+name: Setup staff profile columns 2
+on:
+  workflow_dispatch:
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add detailed profile columns and private table
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, json, urllib.request
+          TOKEN = os.environ["SUPABASE_ACCESS_TOKEN"]
+          REF = "wdbkdwhtocbdaufxufqs"
+          sql = """
+          alter table public.staff add column if not exists gender text;
+          alter table public.staff add column if not exists birth_date date;
+          alter table public.staff add column if not exists address text;
+          alter table public.staff add column if not exists job_type text;
+          alter table public.staff add column if not exists retire_date date;
+          alter table public.staff add column if not exists position_title text;
+          alter table public.staff add column if not exists employment_type text;
+          create table if not exists public.staff_private (
+            staff_id uuid primary key references public.staff (id) on delete cascade,
+            my_number text,
+            updated_at timestamptz not null default now()
+          );
+          alter table public.staff_private enable row level security;
+          drop policy if exists sp_admin_all on public.staff_private;
+          create policy sp_admin_all on public.staff_private
+            for all to authenticated
+            using (public.is_admin()) with check (public.is_admin());
+          grant select, insert, update, delete on public.staff_private to authenticated;
+          drop policy if exists staff_update_own_profile on public.staff;
+          create policy staff_update_own_profile on public.staff
+            for update to authenticated
+            using (auth_user_id = auth.uid()) with check (auth_user_id = auth.uid());
+          create or replace function public.staff_guard_columns()
+          returns trigger language plpgsql security definer set search_path = public as $fn$
+          begin
+            if public.is_admin_or_sub() then return new; end if;
+            if new.name is distinct from old.name
+              or new.short is distinct from old.short
+              or new.role is distinct from old.role
+              or new.can_cook is distinct from old.can_cook
+              or new.auth_user_id is distinct from old.auth_user_id
+              or new.hourly_wage is distinct from old.hourly_wage
+              or new.night_included is distinct from old.night_included
+              or new.quota_wage is distinct from old.quota_wage
+              or new.quota_threshold is distinct from old.quota_threshold
+              or new.cross_allowance is distinct from old.cross_allowance
+              or new.pay_type is distinct from old.pay_type
+              or new.base_salary is distinct from old.base_salary
+              or new.fixed_night_allowance is distinct from old.fixed_night_allowance
+              or new.social_insurance is distinct from old.social_insurance
+              or new.position_allowance is distinct from old.position_allowance
+              or new.deemed_overtime is distinct from old.deemed_overtime
+              or new.transport_allowance is distinct from old.transport_allowance
+              or new.drink_back is distinct from old.drink_back
+              or new.other_allowances is distinct from old.other_allowances
+              or new.social_insurance_enrolled is distinct from old.social_insurance_enrolled
+              or new.dependents is distinct from old.dependents
+              or new.resident_tax is distinct from old.resident_tax
+              or new.advance_payment is distinct from old.advance_payment
+              or new.shop_name is distinct from old.shop_name
+              or new.active is distinct from old.active
+              or new.sort_order is distinct from old.sort_order
+              or new.hire_date is distinct from old.hire_date
+              or new.retire_date is distinct from old.retire_date
+              or new.job_type is distinct from old.job_type
+              or new.position_title is distinct from old.position_title
+              or new.employment_type is distinct from old.employment_type
+            then raise exception 'profile columns only'; end if;
+            return new;
+          end $fn$;
+          create table if not exists public.profile_imports (
+            id uuid primary key default gen_random_uuid(),
+            for_name text not null,
+            fields jsonb not null default '{}'::jsonb,
+            used boolean not null default false,
+            created_at timestamptz not null default now()
+          );
+          alter table public.profile_imports enable row level security;
+          drop policy if exists pi_admin_sub on public.profile_imports;
+          create policy pi_admin_sub on public.profile_imports
+            for all to authenticated
+            using (public.is_admin_or_sub()) with check (public.is_admin_or_sub());
+          grant select, insert, update, delete on public.profile_imports to authenticated;
+          drop trigger if exists staff_guard on public.staff;
+          create trigger staff_guard before update on public.staff
+            for each row execute function public.staff_guard_columns();
+          """
+          req = urllib.request.Request(
+              f"https://api.supabase.com/v1/projects/{REF}/database/query",
+              data=json.dumps({"query": sql}).encode(),
+              headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"},
+              method="POST")
+          with urllib.request.urlopen(req, timeout=120) as r:
+              print(r.read().decode()[:500])
+          print("STAFF_PROFILE2_SETUP_DONE")
+          PYEOF
