@@ -137,6 +137,34 @@ h1, h2, h3 { line-height: 1.35; }
 .kiosk-name.is-break .k-state { color: #7A3E00; }
 .kiosk-name.is-done { opacity: .55; }
 
+/* ---------- キオスク横向き（iPad）: 幅いっぱい＋左右2カラムで1画面に収める ---------- */
+body.kiosk-mode .view { max-width: 1280px; }
+@media (orientation: landscape) and (min-width: 900px) {
+  body.kiosk-mode .view { padding-top: 10px; }
+  body.kiosk-mode #now-working-card { padding: 10px 16px; margin-bottom: 10px; }
+  body.kiosk-mode #now-working-card h2 { display: inline-block; margin: 0 12px 0 0; font-size: 1rem; vertical-align: middle; }
+  body.kiosk-mode #now-working-card .now-working { display: inline-block; vertical-align: middle; }
+  body.kiosk-mode #kiosk-area .card {
+    display: grid; column-gap: 22px;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-areas:
+      "title title"
+      "guide guide"
+      "names status"
+      "names buttons"
+      "names today";
+  }
+  body.kiosk-mode #kiosk-area .card > h2 { grid-area: title; }
+  body.kiosk-mode #kiosk-area .card > p.hint { grid-area: guide; }
+  body.kiosk-mode #kiosk-grid { grid-area: names; grid-template-columns: repeat(3, minmax(0, 1fr)); align-content: start; margin: 4px 0 0; }
+  body.kiosk-mode #kiosk-grid .kiosk-name { padding: 10px 6px; }
+  body.kiosk-mode #kiosk-status { grid-area: status; align-self: end; margin: 0 0 10px; }
+  body.kiosk-mode #kiosk-area .clock-grid { grid-area: buttons; }
+  body.kiosk-mode #kiosk-area .btn-clock { padding: 16px 8px; }
+  body.kiosk-mode #kiosk-area .btn-in { padding: 20px 8px; }
+  body.kiosk-mode #kiosk-today { grid-area: today; }
+}
+
 /* ---------- 管理者ホーム（admin の打刻タブ） ---------- */
 /* 管理者用アプリの管理者ホームと見た目を揃えたダークテーマ。
    #admin-home 配下と、body.admin-dark（管理者ホーム表示中だけ付く）の
