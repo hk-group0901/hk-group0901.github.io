@@ -515,6 +515,16 @@ b.addEventListener("click", () => showView(b.dataset.view)));
 // ============================================================
 async function renderSettings() {
 $("set-name").textContent = ME? ME.name: "";
+if (ME) {
+$("pf-shop").textContent = ME.shop_name || "―";
+$("pf-hire").textContent = ME.hire_date || "―";
+$("pf-pos").textContent = ME.position_title || "―";
+$("pf-emp").textContent = ME.employment_type || "―";
+$("pf-gender").value = ME.gender || "";
+$("pf-birth").value = ME.birth_date || "";
+$("pf-address").value = ME.address || "";
+$("pf-note").value = ME.profile_note || "";
+}
 if (DEMO) {
 $("set-email").textContent = "デモモード（ログインIDなし）";
 $("pw-demo-note").style.display = "block";
@@ -530,6 +540,25 @@ $("set-email").textContent = (data && data.user && data.user.email) || "";
 }
 refreshLockUI();
 }
+
+$("btn-save-profile").addEventListener("click", async () => {
+const msg = $("pf-msg");
+const setMsg = (t, ok) => { msg.textContent = t; msg.className = "form-msg " + (ok? "ok": "err"); };
+if (DEMO) { setMsg("デモモードでは保存できません", false); return; }
+if (!ME) return;
+const fields = {
+gender: $("pf-gender").value || null,
+birth_date: $("pf-birth").value || null,
+address: $("pf-address").value.trim() || null,
+profile_note: $("pf-note").value.trim() || null
+};
+$("btn-save-profile").disabled = true;
+const { error } = await sb.from("staff").update(fields).eq("id", ME.id);
+$("btn-save-profile").disabled = false;
+if (error) { setMsg("保存できませんでした。もう一度試してください", false); return; }
+Object.assign(ME, fields);
+setMsg("プロフィールを保存しました", true);
+});
 
 $("btn-change-pw").addEventListener("click", async () => {
 const msg = $("pw-msg");

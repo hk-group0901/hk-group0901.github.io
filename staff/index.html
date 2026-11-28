@@ -331,6 +331,39 @@
     </div>
 
     <div class="card">
+      <h2>プロフィール</h2>
+      <p class="hint">あなたの情報を入力してください。お店の管理画面（給与アプリ）にそのまま反映されます。</p>
+      <table class="pay-table">
+        <tr><td>所属</td><td class="num" id="pf-shop">―</td></tr>
+        <tr><td>入社日</td><td class="num" id="pf-hire">―</td></tr>
+        <tr><td>役職</td><td class="num" id="pf-pos">―</td></tr>
+        <tr><td>雇用形態</td><td class="num" id="pf-emp">―</td></tr>
+      </table>
+      <div class="field" style="margin-top:14px">
+        <label for="pf-gender">性別</label>
+        <select id="pf-gender">
+          <option value="">未設定</option>
+          <option value="男性">男性</option>
+          <option value="女性">女性</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="pf-birth">生年月日</label>
+        <input id="pf-birth" type="date">
+      </div>
+      <div class="field">
+        <label for="pf-address">住所</label>
+        <input id="pf-address" type="text" placeholder="住所を入力">
+      </div>
+      <div class="field">
+        <label for="pf-note">履歴・メモ</label>
+        <input id="pf-note" type="text" placeholder="例：入社前の職歴など">
+      </div>
+      <p class="form-msg" id="pf-msg"></p>
+      <button class="btn-primary" id="btn-save-profile" type="button">プロフィールを保存する</button>
+    </div>
+
+    <div class="card">
       <h2>パスワードの変更</h2>
       <div class="banner warn" id="pw-demo-note" style="margin-bottom:12px">デモモードでは変更できません</div>
       <div class="field">
