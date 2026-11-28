@@ -267,6 +267,18 @@ Deno.serve(async (req) => {
     return jsonResponse({ ok: true, skipped: "not answered yet" });
   }
 
+  // 二重通知の防止：アプリからの直接 invoke と Webhook が両方来ても、
+  // 通知済みフラグを先に立てられた1回だけが通知する（原子的な claim）。
+  const { data: claimed } = await sb
+    .from("work_requests")
+    .update({ answered_notified_at: new Date().toISOString() })
+    .eq("id", wr.id)
+    .is("answered_notified_at", null)
+    .select("id");
+  if (!claimed || claimed.length === 0) {
+    return jsonResponse({ ok: true, skipped: "already notified" });
+  }
+
   const { data: staff } = await sb
     .from("staff").select("name").eq("id", wr.staff_id).single();
   const name = staff?.name ?? "スタッフ";
@@ -390,6 +402,18 @@ Deno.serve(async (req) => {
     .eq("id", id)
     .single();
   if (error || !cr) return jsonResponse({ error: "correction_request not found" }, 404);
+
+  // 二重通知の防止：アプリからの直接 invoke と Webhook が両方来ても、
+  // 通知済みフラグを先に立てられた1回だけが通知する（原子的な claim）。
+  const { data: claimed } = await sb
+    .from("correction_requests")
+    .update({ created_notified_at: new Date().toISOString() })
+    .eq("id", cr.id)
+    .is("created_notified_at", null)
+    .select("id");
+  if (!claimed || claimed.length === 0) {
+    return jsonResponse({ ok: true, skipped: "already notified" });
+  }
 
   const { data: staff } = await sb
     .from("staff").select("name").eq("id", cr.staff_id).single();
@@ -611,6 +635,11 @@ def run_sql(sql, label):
 # pg_net を有効化（Database Webhooks の土台）
 run_sql("CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;", "pg_net")
 print("pg_net ready")
+
+# 二重通知防止用の claim カラム
+run_sql("ALTER TABLE public.work_requests ADD COLUMN IF NOT EXISTS answered_notified_at timestamptz;", "claim col wr")
+run_sql("ALTER TABLE public.correction_requests ADD COLUMN IF NOT EXISTS created_notified_at timestamptz;", "claim col cr")
+print("notify claim columns ready")
 
 # Webhook 用トリガー関数（pg_net で Edge Function を呼ぶ）
 func_sql = """
