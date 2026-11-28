@@ -1378,6 +1378,57 @@ if (scroll) $("day-detail-card").scrollIntoView({ behavior: "smooth", block: "st
 $("sch-prev").addEventListener("click", () => { shiftMonth(schState, -1); renderSchedule();});
 $("sch-next").addEventListener("click", () => { shiftMonth(schState, 1); renderSchedule();});
 
+// ---------- アプリ内印刷（1ヶ月分のシフト表） ----------
+// 印刷ページ（print.html）は別ブラウザで開くとログインが引き継がれないため、
+// 表示中の月をアプリの中で表に描いて、そのまま印刷できるようにする。
+function printCellHTML(rows) {
+if (!rows || !rows.length) return "";
+const parts = [];
+if (rows.some((r) => r.band === "lunch")) parts.push("昼の部");
+const night = rows
+.filter((r) => r.band === "dinner" || r.band === "late")
+.map((r) => ({ s: r.start_time || BAND[r.band].start, e: r.end_time || BAND[r.band].end }))
+.sort((a, b) => toMin(a.s) - toMin(b.s));
+const merged = [];
+for (const r of night) {
+const lastM = merged[merged.length - 1];
+if (lastM && lastM.e === r.s) lastM.e = r.e;
+else merged.push({ ...r });
+}
+merged.forEach((r) => parts.push(`${r.s}〜${r.e}`));
+return parts.join("<br>");
+}
+$("btn-print-inapp").addEventListener("click", async () => {
+const { y, m } = schState;
+const shifts = await DB.listShifts(y, m);
+const cellMap = new Map();
+shifts.forEach((s) => {
+const key = `${s.date}|${s.staff_id}`;
+if (!cellMap.has(key)) cellMap.set(key, []);
+cellMap.get(key).push(s);
+});
+const daysInMonth = new Date(y, m + 1, 0).getDate();
+const DOWP = ["日", "月", "火", "水", "木", "金", "土"];
+let rowsHTML = "";
+for (let d = 1; d <= daysInMonth; d++) {
+const date = new Date(y, m, d);
+const dow = date.getDay();
+const closed = dow === CFG.SHOP.closedWeekday;
+const dowCls = dow === 0 ? "sun" : dow === 6 ? "sat" : "";
+const ds = fmtDate(date);
+const cells = closed
+? STAFF.map(() => `<td class="cell">定休日</td>`).join("")
+: STAFF.map((s) => `<td class="cell">${printCellHTML(cellMap.get(`${ds}|${s.id}`))}</td>`).join("");
+rowsHTML += `<tr class="${closed ? "closed" : ""}"><td class="date-col ${dowCls}">${d}（${DOWP[dow]}）</td>${cells}</tr>`;
+}
+$("print-sheet-root").innerHTML =
+`<div class="sheet"><div class="sheet-head"><div class="sheet-title">${y}年${m + 1}月1日〜${daysInMonth}日のシフト</div>` +
+`<div class="sheet-company">（株）H&Kグループ辛麺屋物語中町本店</div></div>` +
+`<table class="shift-matrix"><thead><tr><th class="date-col">日付</th>${STAFF.map((s) => `<th>${esc(s.name)}</th>`).join("")}</tr></thead><tbody>${rowsHTML}</tbody></table>` +
+`<div class="sheet-foot">火曜定休／日曜は夜のみ営業　ランチ 11:00–15:00・ディナー 18:00–22:00・深夜 22:00–27:00（「昼の部」はランチ勤務）</div></div>`;
+window.print();
+});
+
 // ============================================================
 // 給与計算
 // ============================================================
@@ -1752,14 +1803,44 @@ const raw = atob(b64);
 return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 }
 async function setupPushUI() {
+const banner = $("push-banner");
+const btn = $("btn-enable-push");
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const standalone = window.navigator.standalone === true
+|| window.matchMedia("(display-mode: standalone)").matches;
+// iOS はホーム画面に追加したアプリでないと通知が使えない。追加を案内する。
+if (isIOS && !standalone) {
+banner.firstChild.textContent =
+"iPhoneで通知を受け取るには、このページをホーム画面に追加して、追加したアイコンから開いてください（共有ボタン→「ホーム画面に追加」）。 ";
+btn.style.display = "none";
+banner.style.display = "block";
+return;
+}
 if (!("serviceWorker" in navigator) ||!("PushManager" in window)) {
-$("push-banner").style.display = "none"; return;
+banner.style.display = "none"; return;
+}
+// 通知がブロックされている場合はボタンでは直せないので、設定の案内を出す。
+if (Notification.permission === "denied") {
+banner.firstChild.textContent =
+"通知がブロックされています。端末の設定で、このアプリの通知を許可してください。 ";
+btn.style.display = "none";
+banner.style.display = "block";
+return;
 }
 const reg = await navigator.serviceWorker.ready;
-const sub = await reg.pushManager.getSubscription();
-if (sub || Notification.permission === "granted") {
-$("push-banner").style.display = "none";
+let sub = await reg.pushManager.getSubscription();
+// 許可済みなのに購読が無い（端末変更・購読の失効など）場合は、黙って取り直す。
+if (!sub && Notification.permission === "granted" && CFG.VAPID_PUBLIC_KEY) {
+try {
+sub = await reg.pushManager.subscribe({
+userVisibleOnly: true,
+applicationServerKey: urlBase64ToUint8Array(CFG.VAPID_PUBLIC_KEY)
+});
+if (sub) await DB.savePushSubscription(sub.toJSON());
+} catch (e) { /* 取れなければバナーを出して手動でONにしてもらう */ }
 }
+banner.style.display = sub ? "none" : "block";
+btn.style.display = sub ? "none" : "";
 }
 $("btn-enable-push").addEventListener("click", async () => {
 try {

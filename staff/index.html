@@ -210,9 +210,10 @@
         <button class="btn-nav" id="sch-next" aria-label="次の月">›</button>
       </div>
       <div class="calendar" id="sch-calendar"></div>
-      <a href="print.html" class="btn-ghost" style="display:block;text-align:center;text-decoration:none">
+      <button class="btn-ghost" id="btn-print-inapp" style="display:block;width:100%;text-align:center">
         1ヶ月分のシフト表を印刷する（管理者用）
-      </a>
+      </button>
+      <a href="print.html" class="hint" style="display:block;text-align:center;margin-top:8px">パソコンで印刷する場合はこちら（印刷ページ）</a>
     </div>
 
     <div class="card" id="day-detail-card" style="display:none">
@@ -497,6 +498,8 @@
 </section>
 
 <div class="toast" id="toast"></div>
+
+<div id="print-sheet-root"></div>
 
 <script src="app.js"></script>
 </body>

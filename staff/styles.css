@@ -570,3 +570,35 @@ body.admin-dark .logout-row button { color: #9C8692; }
   #sch-calendar .cal-day { min-height: 56px; }
   .cal-head .month-title { font-size: 1.15rem; }
 }
+
+/* ---------- アプリ内印刷（シフト表シート） ---------- */
+#print-sheet-root { display: none; }
+@media print {
+  @page { size: A4 landscape; margin: 9mm; }
+  body { margin: 0 !important; background: #fff !important; }
+  body > *:not(#print-sheet-root) { display: none !important; }
+  #print-sheet-root { display: block !important; }
+  #print-sheet-root .sheet-head {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-bottom: 2px solid #222; padding-bottom: 8px; margin-bottom: 12px;
+  }
+  #print-sheet-root .sheet-title { font-size: 15pt; font-weight: 900; color: #222; }
+  #print-sheet-root .sheet-company { font-size: 9.5pt; font-weight: 700; color: #222; white-space: nowrap; }
+  #print-sheet-root table.shift-matrix { border-collapse: collapse; width: 100%; table-layout: fixed; }
+  #print-sheet-root table.shift-matrix th,
+  #print-sheet-root table.shift-matrix td {
+    border: 1px solid #666; padding: 2.6pt 2pt; text-align: center;
+    font-size: 8.2pt; vertical-align: middle; word-break: break-all; color: #222;
+  }
+  #print-sheet-root table.shift-matrix thead { display: table-header-group; }
+  #print-sheet-root table.shift-matrix thead th { background: #F7F2EC; font-weight: 800; }
+  #print-sheet-root table.shift-matrix th.date-col,
+  #print-sheet-root table.shift-matrix td.date-col {
+    width: 52pt; font-weight: 800; background: #F7F2EC; white-space: nowrap;
+  }
+  #print-sheet-root td.date-col.sun { color: #D94036; }
+  #print-sheet-root td.date-col.sat { color: #3E7CB1; }
+  #print-sheet-root table.shift-matrix tr.closed td { background: #F1ECE6; color: #8A7A70; }
+  #print-sheet-root table.shift-matrix td.cell { font-weight: 700; }
+  #print-sheet-root .sheet-foot { margin-top: 10px; font-size: 8pt; color: #555; }
+}
