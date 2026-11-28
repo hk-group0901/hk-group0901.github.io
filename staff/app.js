@@ -1620,7 +1620,16 @@ period: `${y}年${m + 1}月1日〜${m + 1}月${new Date(y, m + 1, 0).getDate()}�
 // 控除のルールは computePayroll（打刻ベースの本計算）と同じにしてある。
 async function computeShiftEstimate(staff, y, m) {
 const t2m = (t) => { const [h, mm] = t.split(":").map(Number); return h * 60 + mm; };
-const shifts = (await DB.listShifts(y, m)).filter((s) => s.staff_id === staff.id);
+let shifts = (await DB.listShifts(y, m)).filter((s) => s.staff_id === staff.id);
+let provisional = false;
+if (!shifts.length) {
+// 確定シフトがまだ無い月は、希望（却下以外）から暫定の予想を出す
+const reqs = (await DB.myRequests(staff.id, y, m)).filter((r) => r.status!== "rejected");
+if (reqs.length) {
+provisional = true;
+shifts = reqs.map((r) => ({ staff_id: staff.id, date: r.date, band: r.band, start_time: BAND[r.band].start, end_time: BAND[r.band].end }));
+}
+}
 let workMin = 0, nightMin = 0, otMin = 0;
 const perDay = new Map();
 shifts.forEach((s) => {
@@ -1664,7 +1673,7 @@ return { gross, net: gross - ded };
 };
 const main = calcNet(wage, nightIncluded);
 const altNet = quotaState === "unknown"? calcNet(staff.quota_wage, true).net: null;
-return { days, workMin, nightMin, wage, nightIncluded, quotaState,
+return { days, workMin, nightMin, wage, nightIncluded, quotaState, provisional,
 gross: main.gross, net: main.net, altNet, shiftCount: shifts.length };
 }
 async function renderShiftEstimate(y, m) {
@@ -1676,11 +1685,11 @@ if (!e.shiftCount) { card.style.display = "none"; return; }
 card.style.display = "";
 $("pay-est-net").textContent = fmtYen(e.net);
 $("pay-est-table").innerHTML =
-`<tr><td>出勤日数（確定シフト）</td><td class="num">${e.days}日</td></tr>` +
+`<tr><td>出勤日数（${e.provisional? "希望": "確定シフト"}）</td><td class="num">${e.days}日</td></tr>` +
 `<tr><td>労働時間</td><td class="num">${fmtHM(e.workMin)}（深夜 ${fmtHM(e.nightMin)}）</td></tr>` +
 `<tr><td>支給合計の予想</td><td class="num">${fmtYen(e.gross)}</td></tr>` +
 `<tr><td>時給</td><td class="num">${fmtYen(e.wage)}${e.nightIncluded? "（深夜手当込み）": ""}</td></tr>`;
-const notes = ["確定シフトから計算した概算です。実際の金額は、打刻の記録や締め日の確定内容で変わります。"];
+const notes = [e.provisional? "希望から計算した暫定の概算です。確定シフトが出ると、そちらで計算し直します。実際の金額は、打刻の記録や締め日の確定内容で変わります。": "確定シフトから計算した概算です。実際の金額は、打刻の記録や締め日の確定内容で変わります。"];
 if (e.quotaState === "unknown") notes.push(`今月の売上が未確定のため通常時給で計算しています。ノルマ達成の場合は、手取り予想が約${fmtYen(e.altNet)}になります。`);
 else if (e.quotaState === "achieved") notes.push("今月はノルマ達成の時給で計算しています。");
 else if (e.quotaState === "missed") notes.push("今月の売上はノルマ未達のため、通常時給＋深夜割増で計算しています。");
