@@ -1997,7 +1997,6 @@ if (!IS_ADMIN()) return;
 const { y, m} = admState;
 $("adm-month-title").textContent = `${y}年${m + 1}月`;
 if (!$("adm-day-date").value) $("adm-day-date").value = admState.day;
-if (!$("adm-edit-date").value) $("adm-edit-date").value = admState.editDate;
 await renderAdminRequests();
 await renderAdminDay();
 await renderAdminEditor();
@@ -2107,55 +2106,137 @@ admState.day = $("adm-day-date").value || admState.day;
 renderAdminDay();
 });
 
-// ---------- 3. シフトの確定・編集 ----------
-function normalizeTime(t) {
-const mm = /^(\d{1,2}):([0-5]\d)$/.exec(String(t || "").trim());
-if (!mm) return null;
-const h = Number(mm[1]);
-if (h > 29) return null; // 27:00・28:00 表記まで許容
-return `${pad(h)}:${mm[2]}`;
+// ---------- 3. シフト作成・編集（Airシフト式：スタッフ×日付の月表） ----------
+// セル＝その人・その日。上段に確定シフト（色つき）、下段に未確定の希望（枠だけ）を
+// 同じセルに並べる。セルをタップすると下に編集パネルが開き、希望はボタン1つで
+// 確定にでき、追加は区分ボタン（標準時間）かプルダウンの時刻で入れる。
+let admCell = null; // { staffId, date } 選択中のセル
+let admGridCache = { shiftMap: new Map(), reqMap: new Map()};
+const HOUR_OPTS = []; for (let h = 10; h <= 28; h++) HOUR_OPTS.push(h);
+const MIN_OPTS = ["00", "15", "30", "45"];
+function timeSelHTML(cls, val) {
+const [hh, mm] = String(val || "18:00").split(":");
+const hOpts = HOUR_OPTS.map((h) => `<option value="${pad(h)}"${pad(h) === hh? " selected": ""}>${h}</option>`).join("");
+const mOpts = MIN_OPTS.map((x) => `<option value="${x}"${x === mm? " selected": ""}>${x}</option>`).join("");
+return `<select class="${cls}-h adm-tsel" aria-label="時">${hOpts}</select>:<select class="${cls}-m adm-tsel" aria-label="分">${mOpts}</select>`;
+}
+function readTimeSel(scope, cls) {
+return scope.querySelector(`.${cls}-h`).value + ":" + scope.querySelector(`.${cls}-m`).value;
+}
+function setTimeSel(scope, cls, val) {
+const [hh, mm] = String(val).split(":");
+scope.querySelector(`.${cls}-h`).value = hh;
+scope.querySelector(`.${cls}-m`).value = mm;
 }
 async function renderAdminEditor() {
-const ds = admState.editDate;
+const { y, m} = admState;
+const shifts = await DB.listShifts(y, m);
+const reqs = (await DB.listAllRequests(y, m)).filter((r) => r.status!== "rejected");
+const shiftMap = new Map(), reqMap = new Map();
+shifts.forEach((s) => {
+const k = s.staff_id + "|" + s.date;
+if (!shiftMap.has(k)) shiftMap.set(k, []);
+shiftMap.get(k).push(s);
+});
+reqs.forEach((r) => {
+const k = r.staff_id + "|" + r.date;
+if (!reqMap.has(k)) reqMap.set(k, []);
+reqMap.get(k).push(r);
+});
+admGridCache = { shiftMap, reqMap};
+const days = new Date(y, m + 1, 0).getDate();
+const todayDs = fmtDate(new Date());
+let head = `<tr><th class="g-name">スタッフ</th>`;
+for (let d = 1; d <= days; d++) {
+const dt = new Date(y, m, d);
+const cls = dt.getDay() === 0? " sun": dt.getDay() === 6? " sat": dt.getDay() === CFG.SHOP.closedWeekday? " closed": "";
+head += `<th class="g-day${cls}">${d}<br>${DOW[dt.getDay()]}</th>`;
+}
+head += "</tr>";
+const bandOrder = (a, b) => ["lunch", "dinner", "late"].indexOf(a.band) - ["lunch", "dinner", "late"].indexOf(b.band);
+const rows = STAFF.map((s) => {
+let tds = `<td class="g-name">${esc(s.short || s.name)}</td>`;
+for (let d = 1; d <= days; d++) {
+const ds = fmtDate(new Date(y, m, d));
+const mine = (shiftMap.get(s.id + "|" + ds) || []).slice().sort(bandOrder);
+const haveBands = new Set(mine.map((x) => x.band));
+let chips = mine.map((x) =>
+`<span class="g-chip ${x.band}">${BAND_SHORT[x.band]} ${(x.start_time || BAND[x.band].start).slice(0, 5)}–${(x.end_time || BAND[x.band].end).slice(0, 5)}</span>`).join("");
+chips += (reqMap.get(s.id + "|" + ds) || []).filter((r) =>!haveBands.has(r.band))
+.map((r) => `<span class="g-chip req ${r.band}">希望 ${BAND_SHORT[r.band]}</span>`).join("");
+const sel = admCell && admCell.staffId === s.id && admCell.date === ds? " sel": "";
+tds += `<td class="g-cell${sel}${ds === todayDs? " today": ""}" data-staff="${s.id}" data-date="${ds}">${chips}</td>`;
+}
+return `<tr>${tds}</tr>`;
+}).join("");
+$("adm-grid").innerHTML = head + rows;
+$("adm-grid").querySelectorAll(".g-cell").forEach((c) =>
+c.addEventListener("click", () => {
+admCell = { staffId: c.dataset.staff, date: c.dataset.date};
+$("adm-grid").querySelectorAll(".g-cell.sel").forEach((x) => x.classList.remove("sel"));
+c.classList.add("sel");
+renderAdminCellPanel();
+}));
+renderAdminCellPanel();
+}
+function renderAdminCellPanel() {
+const box = $("adm-cell-panel");
+if (!admCell) { box.innerHTML = ""; return;}
+const { shiftMap, reqMap} = admGridCache;
+const s = STAFF.find((x) => x.id === admCell.staffId);
+if (!s) { box.innerHTML = ""; return;}
+const ds = admCell.date;
 const d = new Date(ds);
-const shifts = await DB.listShifts(d.getFullYear(), d.getMonth());
-const dayShifts = shifts.filter((s) => s.date === ds);
-const box = $("adm-edit-list");
-box.innerHTML = "";
-STAFF.forEach((s) => {
-const mine = dayShifts.filter((x) => x.staff_id === s.id);
-const div = document.createElement("div");
-div.className = "adm-edit-staff";
-let html = `<div class="adm-edit-name">${esc(s.name)}</div>`;
-mine.forEach((x) => {
-html += `<div class="adm-shift-row" data-shift="${x.id}">
+const mine = (shiftMap.get(s.id + "|" + ds) || []).slice()
+.sort((a, b) => ["lunch", "dinner", "late"].indexOf(a.band) - ["lunch", "dinner", "late"].indexOf(b.band));
+const haveBands = new Set(mine.map((x) => x.band));
+const reqTodo = (reqMap.get(s.id + "|" + ds) || []).filter((r) =>!haveBands.has(r.band));
+let html = `<div class="adm-cell-head"><b>${esc(s.name)}</b>　${d.getMonth() + 1}月${d.getDate()}日（${DOW[d.getDay()]}）</div>`;
+if (reqTodo.length) {
+html += `<div class="adm-cell-sec">この日の希望（タップで確定）</div><div class="adm-pat-row">` +
+reqTodo.map((r) => `<button type="button" class="btn-mini accent" data-confirm-req="${r.band}">${BAND[r.band].label}の希望を確定にする</button>`).join("") + `</div>`;
+}
+if (mine.length) {
+html += `<div class="adm-cell-sec">確定シフト</div>` + mine.map((x) =>
+`<div class="adm-shift-row" data-shift="${x.id}">
 <span class="tag solid ${x.band}">${BAND[x.band].label}</span>
-<input type="text" class="adm-st" value="${esc(x.start_time || BAND[x.band].start)}" inputmode="numeric" aria-label="開始時刻">
-<span>〜</span>
-<input type="text" class="adm-en" value="${esc(x.end_time || BAND[x.band].end)}" inputmode="numeric" aria-label="終了時刻">
+${timeSelHTML("adm-st", x.start_time || BAND[x.band].start)}<span>〜</span>${timeSelHTML("adm-en", x.end_time || BAND[x.band].end)}
 <button type="button" class="btn-mini accent" data-act="save">保存</button>
 <button type="button" class="btn-mini danger" data-act="del">削除</button>
+</div>`).join("");
+}
+const addable = ["lunch", "dinner", "late"].filter((b) =>!haveBands.has(b));
+if (addable.length) {
+html += `<div class="adm-cell-sec">シフトを追加（タップで標準時間）</div><div class="adm-pat-row">` +
+addable.map((b) => `<button type="button" class="btn-mini" data-add-band="${b}">${BAND[b].label} ${BAND[b].start}–${BAND[b].end}</button>`).join("") + `</div>`;
+html += `<div class="adm-shift-row adm-custom-row">
+<select class="adm-new-band" aria-label="区分">${addable.map((b) => `<option value="${b}">${BAND[b].label}</option>`).join("")}</select>
+${timeSelHTML("adm-new-st", BAND[addable[0]].start)}<span>〜</span>${timeSelHTML("adm-new-en", BAND[addable[0]].end)}
+<button type="button" class="btn-mini" data-act="add-custom">この時間で追加</button>
 </div>`;
-});
-html += `<div class="adm-shift-row">
-<select class="adm-new-band" aria-label="区分">
-<option value="lunch">ランチ</option>
-<option value="dinner">ディナー</option>
-<option value="late">深夜</option>
-</select>
-<input type="text" class="adm-new-st" value="${BAND.lunch.start}" inputmode="numeric" aria-label="開始時刻">
-<span>〜</span>
-<input type="text" class="adm-new-en" value="${BAND.lunch.end}" inputmode="numeric" aria-label="終了時刻">
-<button type="button" class="btn-mini" data-act="add">追加</button>
-</div>`;
-div.innerHTML = html;
-div.querySelectorAll("[data-shift]").forEach((rowEl) => {
+}
+const dayShifts = [...shiftMap.entries()].filter(([k]) => k.endsWith("|" + ds))
+.flatMap(([, v]) => v);
+if (dayShifts.length) {
+html += `<button type="button" class="btn-primary" id="btn-adm-cell-notify" style="margin-top:12px">${d.getMonth() + 1}月${d.getDate()}日の確定をスタッフに通知する</button>`;
+}
+box.innerHTML = html;
+box.querySelectorAll("[data-confirm-req]").forEach((b) =>
+b.addEventListener("click", async () => {
+await DB.saveShift({ staff_id: s.id, date: ds, band: b.dataset.confirmReq, start_time: null, end_time: null});
+toast(`${s.name}さんの${BAND[b.dataset.confirmReq].label}を確定しました`);
+renderAdminEditor(); renderAdminDay();
+}));
+box.querySelectorAll("[data-add-band]").forEach((b) =>
+b.addEventListener("click", async () => {
+await DB.saveShift({ staff_id: s.id, date: ds, band: b.dataset.addBand, start_time: null, end_time: null});
+toast(`${s.name}さんに${BAND[b.dataset.addBand].label}を追加しました`);
+renderAdminEditor(); renderAdminDay();
+}));
+box.querySelectorAll("[data-shift]").forEach((rowEl) => {
 const shiftId = rowEl.dataset.shift;
 rowEl.querySelector('[data-act="save"]').addEventListener("click", async () => {
-const st = normalizeTime(rowEl.querySelector(".adm-st").value);
-const en = normalizeTime(rowEl.querySelector(".adm-en").value);
-if (!st ||!en) { toast("時刻は 18:00 のように入れてね"); return;}
-await DB.saveShift({ id: shiftId, start_time: st, end_time: en});
+await DB.saveShift({ id: shiftId, start_time: readTimeSel(rowEl, "adm-st"), end_time: readTimeSel(rowEl, "adm-en")});
 toast("保存しました");
 renderAdminEditor(); renderAdminDay();
 });
@@ -2166,60 +2247,48 @@ toast("削除しました");
 renderAdminEditor(); renderAdminDay();
 });
 });
-const bandSel = div.querySelector(".adm-new-band");
-const stIn = div.querySelector(".adm-new-st"), enIn = div.querySelector(".adm-new-en");
+const custom = box.querySelector(".adm-custom-row");
+if (custom) {
+const bandSel = custom.querySelector(".adm-new-band");
 bandSel.addEventListener("change", () => {
-stIn.value = BAND[bandSel.value].start;
-enIn.value = BAND[bandSel.value].end;
+setTimeSel(custom, "adm-new-st", BAND[bandSel.value].start);
+setTimeSel(custom, "adm-new-en", BAND[bandSel.value].end);
 });
-div.querySelector('[data-act="add"]').addEventListener("click", async () => {
-const st = normalizeTime(stIn.value), en = normalizeTime(enIn.value);
-if (!st ||!en) { toast("時刻は 18:00 のように入れてね"); return;}
-if (mine.some((x) => x.band === bandSel.value)) {
-toast("その区分はもう入っています。上の行で直してね"); return;
-}
-await DB.saveShift({ staff_id: s.id, date: ds, band: bandSel.value, start_time: st, end_time: en});
+custom.querySelector('[data-act="add-custom"]').addEventListener("click", async () => {
+await DB.saveShift({ staff_id: s.id, date: ds, band: bandSel.value,
+start_time: readTimeSel(custom, "adm-new-st"), end_time: readTimeSel(custom, "adm-new-en")});
 toast(`${s.name}さんのシフトを追加しました`);
 renderAdminEditor(); renderAdminDay();
 });
-box.appendChild(div);
-});
 }
-$("adm-edit-date").addEventListener("change", () => {
-admState.editDate = $("adm-edit-date").value || admState.editDate;
-renderAdminEditor();
-});
-$("btn-adm-from-requests").addEventListener("click", async () => {
-const ds = admState.editDate;
-const d = new Date(ds);
-const reqs = (await DB.listAllRequests(d.getFullYear(), d.getMonth())).filter((r) => r.date === ds);
-if (!reqs.length) { toast("この日の希望はありませんでした"); return;}
-const shifts = await DB.listShifts(d.getFullYear(), d.getMonth());
-const have = new Set(shifts.filter((s) => s.date === ds).map((s) => s.staff_id + "|" + s.band));
-const todo = reqs.filter((r) =>!have.has(r.staff_id + "|" + r.band));
-for (const r of todo) {
-await DB.saveShift({ staff_id: r.staff_id, date: ds, band: r.band, start_time: null, end_time: null});
-}
-toast(todo.length? `${todo.length}件の希望を確定シフトに反映しました`: "希望はすべて反映済みでした");
-renderAdminEditor(); renderAdminDay();
-});
-$("btn-adm-notify").addEventListener("click", async () => {
-const ds = admState.editDate;
-const d = new Date(ds);
-const shifts = await DB.listShifts(d.getFullYear(), d.getMonth());
-const dayShifts = shifts.filter((s) => s.date === ds);
-const targets = [...new Set(dayShifts.map((s) => s.staff_id))];
-if (!targets.length) { toast("この日は確定シフトがありません"); return;}
+const notifyBtn = box.querySelector("#btn-adm-cell-notify");
+if (notifyBtn) notifyBtn.addEventListener("click", async () => {
+const targets = [...new Set(dayShifts.map((x) => x.staff_id))];
 const rows = targets.map((sid) => {
-const mine = dayShifts.filter((s) => s.staff_id === sid)
-.map((s) => `${BAND[s.band].label} ${s.start_time || BAND[s.band].start}–${s.end_time || BAND[s.band].end}`).join("、");
+const ms = dayShifts.filter((x) => x.staff_id === sid)
+.map((x) => `${BAND[x.band].label} ${x.start_time || BAND[x.band].start}–${x.end_time || BAND[x.band].end}`).join("、");
 return { id: uid(), staff_id: sid, type: "shift_confirmed",
 title: "シフトが確定しました",
-body: `${d.getMonth() + 1}月${d.getDate()}日（${DOW[d.getDay()]}） ${mine} で確定しました。`,
+body: `${d.getMonth() + 1}月${d.getDate()}日（${DOW[d.getDay()]}） ${ms} で確定しました。`,
 created_at: new Date().toISOString()};
 });
 await DB.addNotifications(rows);
 toast(`${targets.length}名に確定のお知らせを送りました`);
+});
+}
+$("btn-adm-month-requests").addEventListener("click", async () => {
+const { y, m} = admState;
+const reqs = (await DB.listAllRequests(y, m)).filter((r) => r.status!== "rejected");
+if (!reqs.length) { toast("今月の希望はありませんでした"); return;}
+if (!confirm(`${m + 1}月の希望をすべて確定シフトに反映しますか？（すでに入っている分はそのままです）`)) return;
+const shifts = await DB.listShifts(y, m);
+const have = new Set(shifts.map((s) => s.staff_id + "|" + s.date + "|" + s.band));
+const todo = reqs.filter((r) =>!have.has(r.staff_id + "|" + r.date + "|" + r.band));
+for (const r of todo) {
+await DB.saveShift({ staff_id: r.staff_id, date: r.date, band: r.band, start_time: null, end_time: null});
+}
+toast(todo.length? `${todo.length}件の希望を確定シフトに反映しました`: "希望はすべて反映済みでした");
+renderAdminEditor(); renderAdminDay();
 });
 
 // ---------- 4. 給与一覧と個人明細 ----------

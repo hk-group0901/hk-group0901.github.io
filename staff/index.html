@@ -412,15 +412,12 @@
     </div>
 
     <div class="card">
-      <h2>シフトの確定・編集</h2>
-      <div class="field">
-        <label for="adm-edit-date">日付</label>
-        <input id="adm-edit-date" type="date">
-      </div>
-      <div id="adm-edit-list"></div>
-      <button class="btn-ghost" id="btn-adm-from-requests" type="button">この日の希望を確定シフトに反映する</button>
-      <button class="btn-primary" id="btn-adm-notify" type="button" style="margin-top:10px">この日の確定をスタッフに通知する</button>
-      <p class="hint">追加・変更したシフトは、その場で保存されます。スタッフへのお知らせは「通知する」ボタンを押したときに届きます。</p>
+      <h2>シフト作成・編集</h2>
+      <p class="hint">表はスタッフ×日付です。色つき＝確定シフト、枠だけ＝希望。セルをタップすると、その人・その日の編集が下に出ます。</p>
+      <div class="adm-grid-scroll"><table class="adm-grid" id="adm-grid"></table></div>
+      <div id="adm-cell-panel"></div>
+      <button class="btn-ghost" id="btn-adm-month-requests" type="button" style="margin-top:12px">今月の希望をすべて確定シフトに反映する</button>
+      <p class="hint">追加・変更はその場で保存されます。スタッフへのお知らせは、セルを選んだときに出る通知ボタンから送れます。</p>
     </div>
 
     <div class="card">
